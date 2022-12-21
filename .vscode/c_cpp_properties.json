@@ -1,0 +1,28 @@
+{
+  "env": {
+    "myDefaultIncludePath": [
+      "${workspaceFolder}",
+      "${workspaceFolder}/src/**",
+      "${workspaceFolder}/build/src/",
+      "${workspaceFolder}/extern/**"
+    ],
+    "myCompilerPath": "/usr/bin/g++"
+  },
+  "configurations": [
+    {
+      "name": "default",
+      "intelliSenseMode": "linux-gcc-x64",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "browse": {
+        "path": [
+          "${workspaceFolder}"
+        ],
+        "limitSymbolsToIncludedHeaders": true,
+        "databaseFilename": ""
+      },
+      "configurationProvider": "ms-vscode.cmake-tools"
+    }
+  ],
+  "version": 4
+}
