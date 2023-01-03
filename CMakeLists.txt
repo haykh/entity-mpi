@@ -26,6 +26,15 @@ endif()
 # -------------------------- Compilation settings -------------------------- #
 set(DEBUG "OFF" CACHE BOOL "Debug mode")
 
+set(BUILD_TESTING OFF CACHE BOOL "Build tests")
+
+if(${BUILD_TESTING} STREQUAL "OFF")
+  set(Kokkos_ENABLE_TESTS OFF CACHE BOOL "Kokkos tests")
+else()
+  set(Kokkos_ENABLE_TESTS ON CACHE BOOL "Kokkos tests")
+endif()
+
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
