@@ -52,6 +52,18 @@ if(${Kokkos_ENABLE_CUDA})
   set(Kokkos_ENABLE_CUDA_LAMBDA ON CACHE BOOL "Enable CUDA lambda")
 endif()
 
+set(output OFF CACHE BOOL "Enable output")
+
+if(${output} STREQUAL "ON")
+  set(ADIOS2_USE_Python OFF CACHE BOOL "Use Python for ADIOS2")
+  set(ADIOS2_USE_Fortran OFF CACHE BOOL "Use Fortran for ADIOS2")
+  set(ADIOS2_USE_MPI OFF CACHE BOOL "Use MPI for ADIOS2")
+  set(ADIOS2_BUILD_EXAMPLES OFF CACHE BOOL "Build ADIOS2 examples")
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/adios2 extern/adios2)
+  link_libraries(adios2::cxx11)
+endif()
+
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/kokkos extern/kokkos)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/src src)
