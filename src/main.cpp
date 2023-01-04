@@ -16,11 +16,28 @@ struct System {
   double dt;                      // Integration time-step
 
   System() {
-    nx = 200, ny = 200, nz = 200;
+    nx = 20, ny = 20, nz = 20;
     tmax = 100;
-    T = Kokkos::View<double***>(), dT = Kokkos::View<double***>();
+    T = Kokkos::View<double***>("System::T", nx, ny, nz);
+    dT = Kokkos::View<double***>("System::dT", nx, ny, nz);
     T0 = 0.0, q = 1.0, sigma = 1.0, P = 1.0;
     dt = 0.1; 
+    Kokkos::deep_copy(T,T0);
+  }
+
+  void output() {
+    adios2::ADIOS adios;
+    adios2::IO io = adios.DeclareIO("fieldIO");
+    auto io_variable = io.DefineVariable<double>(
+        "Temperature", {size_t(nx),size_t(ny),size_t(nz)}, {0,0,0}, {size_t(nx),size_t(ny),size_t(nz)}, adios2::ConstantDims);
+    io.DefineAttribute<std::string>("unit", "K", "Temperature");
+    io.SetEngine("HDF5");
+    
+    adios2::Engine adios_engine = io.Open("../Temp.h5", adios2::Mode::Write);
+    adios_engine.BeginStep();
+    adios_engine.Put(io_variable, T.data());
+    adios_engine.EndStep();
+    adios_engine.Close();
   }
 
 };
@@ -34,6 +51,7 @@ auto main(int argc, char* argv[]) -> int {
   Kokkos::initialize(argc, argv);
   {
     System sys;
+    sys.output();
   }
   Kokkos::finalize();
 

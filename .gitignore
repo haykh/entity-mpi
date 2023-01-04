@@ -36,3 +36,6 @@ script_ntt
 script_vis
 
 .venv
+
+# Spurious output
+*.h5
