@@ -18,25 +18,23 @@ struct System {
 
   // Specify mesh and physical constants
   System() {
-    nx = 20, ny = 20, nghost = 2;
-    tmax = 100;
+    nx = 100, ny = 100, nghost = 2;
+    tmax = 4000;
     T = Kokkos::View<double**>("System::T", nx+2*nghost, ny+2*nghost);
     Ti = Kokkos::View<double**>("System::Ti", nx+2*nghost, ny+2*nghost);
     dT = Kokkos::View<double**>("System::dT", nx+2*nghost, ny+2*nghost);
     io_recast = Kokkos::View<double**>("io_recast", nx, ny);
     T0 = 0.0, T1 = 1.0, vx = 0.5, vy = 0.0;
-    dt = 0.1, iout = 10; 
+    dt = 0.5, iout = 40; 
     Kokkos::deep_copy(T,T0);
     Kokkos::deep_copy(Ti,T0);
   }
 
   void initialize() {
-
     using policy_t = Kokkos::MDRangePolicy<Kokkos::Rank<2>>;
       Kokkos::parallel_for( "recast", policy_t({nghost,nghost},{nx+nghost,ny+nghost}), KOKKOS_LAMBDA ( int i, int j ) {
-        T(i,j) += (T1 - T0) * exp(- ((i - 0.5*(nx + 2*nghost))*(i - 0.5*(nx + 2*nghost)) + (j-0.5*(ny + 2*nghost))*(j-0.5*(ny + 2*nghost))) / (0.2*20) / (0.2*20));
+        T(i,j) += (T1 - T0) * exp(- ((i - 0.5*(nx + 2*nghost))*(i - 0.5*(nx + 2*nghost)) + (j-0.5*(ny + 2*nghost))*(j-0.5*(ny + 2*nghost))) / (0.2*nx) / (0.2*nx));
       });
-
   }
 
   // Advance physical time
@@ -54,23 +52,40 @@ struct System {
       
       for(int t = 0; t <= tmax; t++) {
       
-      //  Do a Crank-Nicolson step
-      Kokkos::parallel_for( "recast", policy_t({nghost,nghost},{nx+nghost,ny+nghost}), KOKKOS_LAMBDA ( int i, int j ) {
+      //  Do a Crank-Nicolson stage
+      Kokkos::parallel_for( "CN1", policy_t({nghost,nghost},{nx+nghost,ny+nghost}), KOKKOS_LAMBDA ( int i, int j ) {
         dT(i,j)  = 0.5 * vx * (T(i+1, j)-T(i-1, j));
         dT(i,j) += 0.5 * vy * (T(i, j+1)-T(i, j-1));
       });
 
-      Kokkos::parallel_for( "recast", policy_t({nghost,nghost},{nx+nghost,ny+nghost}), KOKKOS_LAMBDA ( int i, int j ) {
-        Ti(i,j)  = T(i,j) + dt * dT(i,j);
+      Kokkos::parallel_for( "Euler1", policy_t({nghost,nghost},{nx+nghost,ny+nghost}), KOKKOS_LAMBDA ( int i, int j ) {
+        Ti(i,j) = T(i, j) + 0.5 * dt * dT(i,j);
       });
 
-      Kokkos::parallel_for( "recast", policy_t({nghost,nghost},{nx+nghost,ny+nghost}), KOKKOS_LAMBDA ( int i, int j ) {
+      //  Exchange halo for periodic boundary
+      Kokkos::parallel_for( "Boundary2", policy_t({nghost,0},{nx+nghost,nghost}), KOKKOS_LAMBDA ( int i, int j ) {
+        Ti(i, j) = Ti(i, ny+j);
+        Ti(i, ny+nghost+j) = Ti(i, nghost+j);
+        Ti(j, i) = Ti(nx+j,i);
+        Ti(nx+nghost+j,i) = Ti(nghost+j,i);
+      });
+
+      //  Do final Crank-Nicolson stage
+      Kokkos::parallel_for( "CN2", policy_t({nghost,nghost},{nx+nghost,ny+nghost}), KOKKOS_LAMBDA ( int i, int j ) {
         dT(i,j)  = 0.5 * vx * (Ti(i+1, j)-Ti(i-1, j));
         dT(i,j) += 0.5 * vy * (Ti(i, j+1)-Ti(i, j-1));
       });
 
-      Kokkos::parallel_for( "recast", policy_t({nghost,nghost},{nx+nghost,ny+nghost}), KOKKOS_LAMBDA ( int i, int j ) {
-        T(i,j)  = T(i,j) + dt * dT(i,j);
+      Kokkos::parallel_for( "Euler2", policy_t({nghost,nghost},{nx+nghost,ny+nghost}), KOKKOS_LAMBDA ( int i, int j ) {
+        T(i,j) += dt * dT(i,j);
+      });
+
+      //  Exchange halo for periodic boundary
+      Kokkos::parallel_for( "Boundary2", policy_t({nghost,0},{nx+nghost,nghost}), KOKKOS_LAMBDA ( int i, int j ) {
+        T(i, j) = T(i, ny+j);
+        T(i, ny+nghost+j) = T(i, nghost+j);
+        T(j, i) = T(nx+j,i);
+        T(nx+nghost+j,i) = T(nghost+j,i);
       });
 
       if(t%iout == 0 || t == tmax) {
