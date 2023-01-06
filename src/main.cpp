@@ -1,5 +1,6 @@
 #include <Kokkos_Core.hpp>
 #include <adios2.h>
+#include <adios2/cxx11/KokkosView.h>
 
 #include <iostream>
 #if ADIOS2_USE_MPI
@@ -34,7 +35,7 @@ private:
 };
 
 struct System {
-  int                    nx, ny, nghost;    // System size in grid points
+  int                    nx = 100, ny = 100, nghost = 2;    // System size in grid points
   int                    tmax, iout;        // Number of timesteps, output interval
   Kokkos::View<double**> T, Ti, dT;         // Fields of physical variables
   Kokkos::View<double**> io_recast;
@@ -42,13 +43,12 @@ struct System {
   double                 dt;                // Integration time-step
 
   // Specify mesh and physical constants
-  System() {
-    nx = 100, ny = 100, nghost = 2;
+  System() : T ("System::T", nx + 2 * nghost, ny + 2 * nghost), 
+             Ti ("System::Ti", nx + 2 * nghost, ny + 2 * nghost), 
+             dT ("System::dT", nx + 2 * nghost, ny + 2 * nghost), 
+             io_recast ("io_recast", nx, ny)
+  {
     tmax      = 4000;
-    T         = Kokkos::View<double**>("System::T", nx + 2 * nghost, ny + 2 * nghost);
-    Ti        = Kokkos::View<double**>("System::Ti", nx + 2 * nghost, ny + 2 * nghost);
-    dT        = Kokkos::View<double**>("System::dT", nx + 2 * nghost, ny + 2 * nghost);
-    io_recast = Kokkos::View<double**>("io_recast", nx, ny);
     T0 = 0.0, T1 = 1.0, vx = 0.5, vy = 0.0;
     dt = 0.5, iout = 40;
     Kokkos::deep_copy(T, T0);
@@ -67,11 +67,10 @@ struct System {
     Kokkos::Timer timer;
     adios2::ADIOS adios;
     adios2::IO    io          = adios.DeclareIO("fieldIO");
-    auto          io_variable = io.DefineVariable<double>("Temperature",
-                                                 { size_t(nx), size_t(ny) },
-                                                 { 0, 0 },
-                                                 { size_t(nx), size_t(ny) },
-                                                 adios2::ConstantDims);
+    adios2::Dims count;
+    count.push_back(nx);
+    count.push_back(ny);
+    auto          io_variable = io.DefineVariable<double>("Temperature", {}, {}, count);
     io.DefineAttribute<std::string>("unit", "K", "Temperature");
     io.SetEngine("HDF5");
 
@@ -138,7 +137,12 @@ struct System {
           });
 
         adios_engine.BeginStep();
-        adios_engine.Put(io_variable, io_recast.data());
+        //adios_engine.Put(io_variable, io_recast.data());
+        adios_engine.Put(io_variable, Kokkos::subview(io_recast, Kokkos::ALL(), Kokkos::ALL()));
+        //adios_engine.Put(io_variable, io_recast);
+        //        m_writer.Put<real_t>(m_vars_r[var_st],
+                             //Kokkos::subview(mblock.em_h, slice_i1, slice_i2, (int)var));
+
         adios_engine.EndStep();
 
         printf("Timestep %i Timing (Total: %lf; Average: %lf)\n", t, time, time / t);
