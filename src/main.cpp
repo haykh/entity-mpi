@@ -1,9 +1,14 @@
-#include <ios>
 #include <iostream>
 #include <Kokkos_Core.hpp>
 
-#include <adios2.h>
-#include <adios2/cxx11/KokkosView.h>
+#ifdef MPI_ENABLED
+  #include<mpi.h>
+#endif
+
+#ifdef OUTPUT_ENABLED
+  #include <adios2.h>
+  #include <adios2/cxx11/KokkosView.h>
+#endif
 
 namespace math = Kokkos;
 
@@ -39,6 +44,7 @@ struct System {
   Kokkos::View<double**> io_recast;
   double                 T0, T1, vx, vy;    // Physical constants
   double                 dt;                // Integration time-step
+  double                 etot;              // Total energy
 
   // Specify mesh and physical constants
   System() : T ("System::T", nx + 2 * nghost, ny + 2 * nghost), 
@@ -63,9 +69,6 @@ struct System {
   // Advance physical time
   void evolve() {
     Kokkos::Timer timer;
-    adios2::ADIOS adios;
-    adios2::IO    io          = adios.DeclareIO("fieldIO");
-
     using policy_t              = Kokkos::MDRangePolicy<Kokkos::Rank<2>>;
 
     auto dT_ = this->dT;
@@ -78,16 +81,20 @@ struct System {
     auto nx_ = this->nx;
     auto ny_ = this->ny;
     auto nghost_ = this->nghost;
+    auto etot_ = this->etot;
 
-    const adios2::Dims shape{static_cast<size_t>(nx_), static_cast<size_t>(ny_)};
-    const adios2::Dims start{0,0};
-    const adios2::Dims count{static_cast<size_t>(nx_), static_cast<size_t>(ny_)};
+    #ifdef OUTPUT_ENABLED
+      adios2::ADIOS adios;
+      adios2::IO    io          = adios.DeclareIO("fieldIO");
+      const adios2::Dims shape{static_cast<size_t>(nx_), static_cast<size_t>(ny_)};
+      const adios2::Dims start{0,0};
+      const adios2::Dims count{static_cast<size_t>(nx_), static_cast<size_t>(ny_)};
+      auto          io_variable = io.DefineVariable<double>("Temperature", shape, start, count);
+      io.DefineAttribute<std::string>("unit", "K", "Temperature");
+      io.SetEngine("HDF5");
 
-    auto          io_variable = io.DefineVariable<double>("Temperature", shape, start, count);
-    io.DefineAttribute<std::string>("unit", "K", "Temperature");
-    io.SetEngine("HDF5");
-
-    adios2::Engine adios_engine = io.Open("../Temp.h5", adios2::Mode::Write);
+      adios2::Engine adios_engine = io.Open("../Temp.h5", adios2::Mode::Write);
+    #endif
 
     for (int t = 0; t <= tmax; t++) {
 
@@ -145,30 +152,45 @@ struct System {
 
       if (t % iout == 0 || t == tmax) {
 
-        Kokkos::parallel_for(
-          "recast", policy_t({ 0, 0 }, { nx_, ny_ }), KOKKOS_LAMBDA(int i, int j) {
-            io_recast_(i, j) = T_(i + nghost_, j + nghost_);
-          });
+        etot_ = 0.0;
+        Kokkos::parallel_reduce(policy_t({ nghost_, nghost_ }, { nx_ + nghost_, ny_ + nghost_ }), 
+          KOKKOS_LAMBDA (int i, int j, double& lval) {lval += 0.5*T_(i, j)*T_(i, j);},etot_);
 
-        adios2::Box<adios2::Dims> sel({0,0}, {static_cast<size_t>(nx_),static_cast<size_t>(ny_)});
-        io_variable.SetSelection(sel);
+        #ifdef OUTPUT_ENABLED
 
-        adios_engine.BeginStep();
-        adios_engine.Put<double>(io_variable, Kokkos::subview(io_recast_,Kokkos::ALL(),Kokkos::ALL()));
-        adios_engine.EndStep();
+          Kokkos::parallel_for(
+            "recast", policy_t({ 0, 0 }, { nx_, ny_ }), KOKKOS_LAMBDA(int i, int j) {
+              io_recast_(i, j) = T_(i + nghost_, j + nghost_);
+            });
 
-        adios_engine.Close();
-        adios_engine = io.Open("../Temp.h5", adios2::Mode::Append);
+          adios2::Box<adios2::Dims> sel({0,0}, {static_cast<size_t>(nx_),static_cast<size_t>(ny_)});
+          io_variable.SetSelection(sel);
 
-        printf("Timestep %i Timing (Total: %lf; Average: %lf)\n", t, time, time / t);
+          adios_engine.BeginStep();
+          adios_engine.Put<double>(io_variable, Kokkos::subview(io_recast_,Kokkos::ALL,Kokkos::ALL));
+          adios_engine.EndStep();
+
+          adios_engine.Close();
+          adios_engine = io.Open("../Temp.h5", adios2::Mode::Append);
+
+        #endif
+
+        printf("Timestep %i Timing (Total: %lf; Average: %lf; Energy: %lf)\n", t, time, time / t, etot_);
       }
     }
+    
+    #ifdef OUTPUT_ENABLED
+      adios_engine.Close();
+    #endif
 
-    adios_engine.Close();
   }
 };
 
 auto main(int argc, char* argv[]) -> int {
+
+  #ifdef MPI_ENABLED
+    MPI_Init(&argc,&argv);
+  #endif
 
   Kokkos::initialize(argc, argv);
   {
@@ -177,6 +199,10 @@ auto main(int argc, char* argv[]) -> int {
     sys.evolve();
   }
   Kokkos::finalize();
+
+  #ifdef MPI_ENABLED
+    MPI_Finalize();
+  #endif
 
   return 0;
 }

@@ -68,10 +68,13 @@ if(${output} STREQUAL "ON")
   set(ADIOS2_USE_Fortran OFF CACHE BOOL "Use Fortran for ADIOS2")
   set(ADIOS2_USE_MPI OFF CACHE BOOL "Use MPI for ADIOS2")
   set(ADIOS2_BUILD_EXAMPLES OFF CACHE BOOL "Build ADIOS2 examples")
+  add_compile_options("-D OUTPUT_ENABLED")
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/adios2 extern/adios2)
-  link_libraries(adios2::cxx11)
 endif()
 
+if(${mpi} STREQUAL "ON")
+  add_compile_options("-D MPI_ENABLED")
+endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/kokkos extern/kokkos)
 
