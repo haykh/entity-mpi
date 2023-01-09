@@ -65,19 +65,22 @@ struct System {
   // Advance physical time
   void evolve() {
     Kokkos::Timer timer;
-    adios2::ADIOS adios;
-    adios2::IO    io          = adios.DeclareIO("fieldIO");
+    // adios2::ADIOS adios;
+    // adios2::IO    io          = adios.DeclareIO("fieldIO");
     adios2::Dims count;
     count.push_back(nx);
     count.push_back(ny);
-    auto          io_variable = io.DefineVariable<double>("Temperature", {}, {}, count);
-    io.DefineAttribute<std::string>("unit", "K", "Temperature");
-    io.SetEngine("HDF5");
+    // auto          io_variable = io.DefineVariable<double>("Temperature", {}, {}, count);
+    // io.DefineAttribute<std::string>("unit", "K", "Temperature");
+    // io.SetEngine("HDF5");
 
-    adios2::Engine adios_engine = io.Open("../Temp.h5", adios2::Mode::Write);
+    // adios2::Engine adios_engine = io.Open("../Temp.h5");
     using policy_t              = Kokkos::MDRangePolicy<Kokkos::Rank<2>>;
 
     for (int t = 0; t <= tmax; t++) {
+
+      double time = timer.seconds();
+
       //  Do a Crank-Nicolson stage
       Kokkos::parallel_for(
         "CN1",
@@ -129,37 +132,32 @@ struct System {
         });
 
       if (t % iout == 0 || t == tmax) {
-        double time = timer.seconds();
 
         Kokkos::parallel_for(
           "recast", policy_t({ 0, 0 }, { nx, ny }), KOKKOS_LAMBDA(int i, int j) {
             io_recast(i, j) = T(i + nghost, j + nghost);
           });
 
-        adios_engine.BeginStep();
-        //adios_engine.Put(io_variable, io_recast.data());
-        adios_engine.Put(io_variable, Kokkos::subview(io_recast, Kokkos::ALL(), Kokkos::ALL()));
-        //adios_engine.Put(io_variable, io_recast);
-        //        m_writer.Put<real_t>(m_vars_r[var_st],
-                             //Kokkos::subview(mblock.em_h, slice_i1, slice_i2, (int)var));
-
-        adios_engine.EndStep();
+        // adios_engine.BeginStep();
+        // adios_engine.Put(io_variable, io_recast, adios2::Mode::Deferred);
+        // adios_engine.EndStep();
 
         printf("Timestep %i Timing (Total: %lf; Average: %lf)\n", t, time, time / t);
       }
     }
 
-    adios_engine.Close();
+    // adios_engine.Close();
   }
 };
 
 auto main(int argc, char* argv[]) -> int {
+
   Kokkos::initialize(argc, argv);
-  {
+  
     System sys;
     sys.initialize();
     sys.evolve();
-  }
+
   Kokkos::finalize();
 
   return 0;
