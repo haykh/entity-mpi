@@ -1,11 +1,9 @@
+#include <ios>
+#include <iostream>
 #include <Kokkos_Core.hpp>
+
 #include <adios2.h>
 #include <adios2/cxx11/KokkosView.h>
-
-#include <iostream>
-#if ADIOS2_USE_MPI
-#  include <mpi.h>
-#endif
 
 namespace math = Kokkos;
 
@@ -152,8 +150,11 @@ struct System {
             io_recast_(i, j) = T_(i + nghost_, j + nghost_);
           });
 
+        adios2::Box<adios2::Dims> sel({0,0}, {static_cast<size_t>(nx_),static_cast<size_t>(ny_)});
+        io_variable.SetSelection(sel);
+
         adios_engine.BeginStep();
-        adios_engine.Put<double>(io_variable, io_recast_);
+        adios_engine.Put<double>(io_variable, Kokkos::subview(io_recast_,Kokkos::ALL(),Kokkos::ALL()));
         adios_engine.EndStep();
 
         adios_engine.Close();
