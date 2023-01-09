@@ -57,7 +57,7 @@ struct System {
 
   void initialize() {
     using policy_t = Kokkos::MDRangePolicy<Kokkos::Rank<2>>;
-    Kokkos::parallel_for("recast",
+    Kokkos::parallel_for("initial",
                          policy_t({ nghost, nghost }, { nx + nghost, ny + nghost }),
                          Init_kernel(T, T1, T0, nx, ny, nghost));
   }
@@ -65,90 +65,105 @@ struct System {
   // Advance physical time
   void evolve() {
     Kokkos::Timer timer;
-    // adios2::ADIOS adios;
-    // adios2::IO    io          = adios.DeclareIO("fieldIO");
-    adios2::Dims count;
-    count.push_back(nx);
-    count.push_back(ny);
-    // auto          io_variable = io.DefineVariable<double>("Temperature", {}, {}, count);
-    // io.DefineAttribute<std::string>("unit", "K", "Temperature");
-    // io.SetEngine("HDF5");
+    adios2::ADIOS adios;
+    adios2::IO    io          = adios.DeclareIO("fieldIO");
 
-    // adios2::Engine adios_engine = io.Open("../Temp.h5");
     using policy_t              = Kokkos::MDRangePolicy<Kokkos::Rank<2>>;
+
+    auto dT_ = this->dT;
+    auto T_ = this->T;
+    auto Ti_ = this->Ti;
+    auto io_recast_ = this->io_recast;
+    auto vx_ = this->vx;
+    auto vy_ = this->vy;
+    auto dt_ = this->dt;
+    auto nx_ = this->nx;
+    auto ny_ = this->ny;
+    auto nghost_ = this->nghost;
+
+    const adios2::Dims shape{static_cast<size_t>(nx_), static_cast<size_t>(ny_)};
+    const adios2::Dims start{0,0};
+    const adios2::Dims count{static_cast<size_t>(nx_), static_cast<size_t>(ny_)};
+
+    auto          io_variable = io.DefineVariable<double>("Temperature", shape, start, count);
+    io.DefineAttribute<std::string>("unit", "K", "Temperature");
+    io.SetEngine("HDF5");
+
+    adios2::Engine adios_engine = io.Open("../Temp.h5", adios2::Mode::Write);
 
     for (int t = 0; t <= tmax; t++) {
 
       double time = timer.seconds();
 
-      auto dT_ = this->dT;
-
       //  Do a Crank-Nicolson stage
       Kokkos::parallel_for(
         "CN1",
-        policy_t({ nghost, nghost }, { nx + nghost, ny + nghost }),
+        policy_t({ nghost_, nghost_ }, { nx_ + nghost_, ny_ + nghost_ }),
         KOKKOS_LAMBDA(int i, int j) {
-          dT_(i, j) = 0.5 * vx;// * (T(i + 1, j) - T(i - 1, j));
-          // dT(i, j) += 0.5 * vy * (T(i, j + 1) - T(i, j - 1));
+          dT_(i, j) = 0.5 * vx_ * (T_(i + 1, j) - T_(i - 1, j));
+          dT_(i, j) += 0.5 * vy_ * (T_(i, j + 1) - T_(i, j - 1));
         });
 
-      // Kokkos::parallel_for(
-      //   "Euler1",
-      //   policy_t({ nghost, nghost }, { nx + nghost, ny + nghost }),
-      //   KOKKOS_LAMBDA(int i, int j) { Ti(i, j) = T(i, j) + 0.5 * dt * dT(i, j); });
+      Kokkos::parallel_for(
+        "Euler1",
+        policy_t({ nghost_, nghost_ }, { nx_ + nghost_, ny_ + nghost_ }),
+        KOKKOS_LAMBDA(int i, int j) { Ti_(i, j) = T_(i, j) + 0.5 * dt_ * dT_(i, j); });
 
-      // //  Exchange halo for periodic boundary
-      // Kokkos::parallel_for(
-      //   "Boundary2",
-      //   policy_t({ nghost, 0 }, { nx + nghost, nghost }),
-      //   KOKKOS_LAMBDA(int i, int j) {
-      //     Ti(i, j)               = Ti(i, ny + j);
-      //     Ti(i, ny + nghost + j) = Ti(i, nghost + j);
-      //     Ti(j, i)               = Ti(nx + j, i);
-      //     Ti(nx + nghost + j, i) = Ti(nghost + j, i);
-      //   });
+      //  Exchange halo for periodic boundary
+      Kokkos::parallel_for(
+        "Boundary2",
+        policy_t({ nghost_, 0 }, { nx_ + nghost_, nghost_ }),
+        KOKKOS_LAMBDA(int i, int j) {
+          Ti_(i, j)               = Ti_(i, ny_ + j);
+          Ti_(i, ny_ + nghost_ + j) = Ti_(i, nghost_ + j);
+          Ti_(j, i)               = Ti_(nx_ + j, i);
+          Ti_(nx_ + nghost_ + j, i) = Ti_(nghost_ + j, i);
+        });
 
-      // //  Do final Crank-Nicolson stage
-      // Kokkos::parallel_for(
-      //   "CN2",
-      //   policy_t({ nghost, nghost }, { nx + nghost, ny + nghost }),
-      //   KOKKOS_LAMBDA(int i, int j) {
-      //     dT(i, j) = 0.5 * vx * (Ti(i + 1, j) - Ti(i - 1, j));
-      //     dT(i, j) += 0.5 * vy * (Ti(i, j + 1) - Ti(i, j - 1));
-      //   });
+      //  Do final Crank-Nicolson stage
+      Kokkos::parallel_for(
+        "CN2",
+        policy_t({ nghost_, nghost_ }, { nx_ + nghost_, ny_ + nghost_ }),
+        KOKKOS_LAMBDA(int i, int j) {
+          dT_(i, j) = 0.5 * vx_ * (Ti_(i + 1, j) - Ti_(i - 1, j));
+          dT_(i, j) += 0.5 * vy_ * (Ti_(i, j + 1) - Ti_(i, j - 1));
+        });
 
-      // Kokkos::parallel_for(
-      //   "Euler2",
-      //   policy_t({ nghost, nghost }, { nx + nghost, ny + nghost }),
-      //   KOKKOS_LAMBDA(int i, int j) { T(i, j) += dt * dT(i, j); });
+      Kokkos::parallel_for(
+        "Euler2",
+        policy_t({ nghost_, nghost_ }, { nx_ + nghost_, ny_ + nghost_ }),
+        KOKKOS_LAMBDA(int i, int j) { T_(i, j) += dt_ * dT_(i, j); });
 
-      // //  Exchange halo for periodic boundary
-      // Kokkos::parallel_for(
-      //   "Boundary2",
-      //   policy_t({ nghost, 0 }, { nx + nghost, nghost }),
-      //   KOKKOS_LAMBDA(int i, int j) {
-      //     T(i, j)               = T(i, ny + j);
-      //     T(i, ny + nghost + j) = T(i, nghost + j);
-      //     T(j, i)               = T(nx + j, i);
-      //     T(nx + nghost + j, i) = T(nghost + j, i);
-      //   });
+      //  Exchange halo for periodic boundary
+      Kokkos::parallel_for(
+        "Boundary2",
+        policy_t({ nghost_, 0 }, { nx_ + nghost_, nghost_ }),
+        KOKKOS_LAMBDA(int i, int j) {
+          T_(i, j)               = T_(i, ny_ + j);
+          T_(i, ny_ + nghost_ + j) = T_(i, nghost_ + j);
+          T_(j, i)               = T_(nx_ + j, i);
+          T_(nx_ + nghost_ + j, i) = T_(nghost_ + j, i);
+        });
 
       if (t % iout == 0 || t == tmax) {
 
-        // Kokkos::parallel_for(
-        //   "recast", policy_t({ 0, 0 }, { nx, ny }), KOKKOS_LAMBDA(int i, int j) {
-        //     io_recast(i, j) = T(i + nghost, j + nghost);
-        //   });
+        Kokkos::parallel_for(
+          "recast", policy_t({ 0, 0 }, { nx_, ny_ }), KOKKOS_LAMBDA(int i, int j) {
+            io_recast_(i, j) = T_(i + nghost_, j + nghost_);
+          });
 
-        // adios_engine.BeginStep();
-        // adios_engine.Put(io_variable, io_recast, adios2::Mode::Deferred);
-        // adios_engine.EndStep();
+        adios_engine.BeginStep();
+        adios_engine.Put<double>(io_variable, io_recast_);
+        adios_engine.EndStep();
+
+        adios_engine.Close();
+        adios_engine = io.Open("../Temp.h5", adios2::Mode::Append);
 
         printf("Timestep %i Timing (Total: %lf; Average: %lf)\n", t, time, time / t);
       }
     }
 
-    // adios_engine.Close();
+    adios_engine.Close();
   }
 };
 
