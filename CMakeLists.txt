@@ -71,6 +71,8 @@ if(${output} STREQUAL "ON")
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/adios2 extern/adios2)
 endif()
 
+set(mpi OFF CACHE BOOL "Enable MPI")
+
 if(${mpi} STREQUAL "ON")
   add_compile_options("-D MPI_ENABLED")
 endif()
