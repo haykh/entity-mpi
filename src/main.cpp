@@ -167,7 +167,7 @@ struct System {
           io_variable.SetSelection(sel);
 
           adios_engine.BeginStep();
-          adios_engine.Put<double>(io_variable, T_);
+          adios_engine.Put<double>(io_variable, Kokkos::subview(T_, Kokkos::ALL, Kokkos::ALL));
           adios_engine.EndStep();
 
           // adios_engine.Close();
