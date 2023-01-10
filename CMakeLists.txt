@@ -5,7 +5,6 @@ set(PROJECT_NAME entity-mpi)
 project(${PROJECT_NAME}
   LANGUAGES CXX
 )
-
 find_package(Git QUIET)
 
 if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
