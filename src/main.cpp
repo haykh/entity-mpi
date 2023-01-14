@@ -55,53 +55,40 @@ struct Init_kernel {
               const double&                 T0,
               const int&                    nx,
               const int&                    ny,
+              const int&                    xdown,
+              const int&                    ydown,
               const int&                    nghost)
-    : m_T(T), m_T1(T1), m_T0(T0), m_nx(nx), m_ny(ny), m_nghost(nghost) {}
+    : m_T(T),
+      m_T1(T1),
+      m_T0(T0),
+      m_nx(nx),
+      m_ny(ny),
+      m_xdown(xdown),
+      m_ydown(ydown),
+      m_nghost(nghost) {}
 
   KOKKOS_INLINE_FUNCTION void operator()(int i, int j) const {
-    m_T(i, j)
-      += (m_T1 - m_T0)
-         * math::exp(-((i - 0.5 * (m_nx + 2 * m_nghost)) * (i - 0.5 * (m_nx + 2 * m_nghost))
-                       + (j - 0.5 * (m_ny + 2 * m_nghost)) * (j - 0.5 * (m_ny + 2 * m_nghost)))
-                     / (0.2 * m_nx) / (0.2 * m_nx));
+    m_T(i, j) += (m_T1 - m_T0)
+                 * math::exp(-((m_xdown + i - 0.5 * (m_nx + 2 * m_nghost))
+                                 * (m_xdown + i - 0.5 * (m_nx + 2 * m_nghost))
+                               + (m_ydown + j - 0.5 * (m_ny + 2 * m_nghost))
+                                   * (m_ydown + j - 0.5 * (m_ny + 2 * m_nghost)))
+                             / (0.2 * m_nx) / (0.2 * m_nx));
   }
 
 private:
   Kokkos::View<double**> m_T;
   double                 m_T1, m_T0;
-  int                    m_nx, m_ny, m_nghost;
-};
-
-struct Boundary_kernel {
-  Boundary_kernel(const Kokkos::View<double**>& T,
-                  const int&                    nx,
-                  const int&                    ny,
-                  const int&                    nghost)
-    : m_T(T), m_nx(nx), m_ny(ny), m_nghost(nghost) {}
-
-  KOKKOS_INLINE_FUNCTION void operator()(int i, int j) const {
-    m_T(i, j)                   = m_T(i, m_ny + j);
-    m_T(i, m_ny + m_nghost + j) = m_T(i, m_nghost + j);
-    m_T(j, i)                   = m_T(m_nx + j, i);
-    m_T(m_nx + m_nghost + j, i) = m_T(m_nghost + j, i);
-  }
-
-private:
-  Kokkos::View<double**> m_T;
-  int                    m_nx, m_ny, m_nghost;
+  int                    m_nx, m_ny, m_xdown, m_ydown, m_nghost;
 };
 
 struct CommHelper {
-  MPI_Comm    comm;
+  MPI_Comm comm;
 
-  MPI_Request mpi_requests_recv[4];
-  MPI_Request mpi_requests_send[4];
-  int         mpi_active_requests;
-
-  int         mx, my;
-  int         rank;
-  int         xint, yint;
-  int         up, down, left, right;
+  int      mx, my;
+  int      rank;
+  int      xint, yint;
+  int      up, down, left, right;
 
   CommHelper(MPI_Comm comm_) {
     comm = comm_;
@@ -113,10 +100,10 @@ struct CommHelper {
     my    = 2;
     yint  = floor(rank / mx);
     xint  = rank - yint * mx;
-    left  = xint == 0 ? (mx - 1) + mx * yint : rank - 1;
-    right = xint == mx - 1 ? 0 + mx * yint : rank + 1;
-    down  = yint == 0 ? xint + mx * (my - 1) : rank - mx;
-    up    = yint == my - 1 ? xint + mx * 0 : rank + mx;
+    left  = xint == 0 ? 0 + (mx - 1) + mx * yint : rank - 1;
+    right = xint == mx - 1 ? 0 + 0 + mx * yint : rank + 1;
+    down  = yint == 0 ? 0 + xint + mx * (my - 1) : rank - mx;
+    up    = yint == my - 1 ? 0 + xint + mx * 0 : rank + mx;
 
     printf("#Ranks: %i This rank: %i nx/ny: %i %i This nx/ny: %i %i \n",
            nranks,
@@ -137,31 +124,35 @@ struct CommHelper {
   void isend_irecv(int          partner,
                    ViewType     send_buffer,
                    ViewType     recv_buffer,
+                   int          tag,
                    MPI_Request* request_send,
                    MPI_Request* request_recv) {
     MPI_Irecv(
-      recv_buffer.data(), recv_buffer.size(), MPI_DOUBLE, partner, 1, comm, request_recv);
+      recv_buffer.data(), recv_buffer.size(), MPI_DOUBLE, partner, tag, comm, request_recv);
     MPI_Isend(
-      send_buffer.data(), send_buffer.size(), MPI_DOUBLE, partner, 1, comm, request_send);
+      send_buffer.data(), send_buffer.size(), MPI_DOUBLE, partner, tag, comm, request_send);
   }
 };
 
 struct System {
   CommHelper             comm;
-  const int              nx = 1000, ny = 1000, nghost = 2;    // System size in grid points
+  const int              nx = 200, ny = 200, nghost = 1;    // System size in grid points
   int                    sx, sy, imin, imax, jmin, jmax, lx, ly;
   int                    tmax, iout;    // Number of timesteps, output interval
   Kokkos::View<double**> T, Ti, dT;     // Fields of physical variables
   int                    xdown = 0, ydown = 0;
   int                    xup = 0, yup = 0;
   Kokkos::View<double**> io_recast;
-  double                 T0, T1, vx, vy;                          // Physical constants
-  double                 dt;                                      // Integration time-step
-  double                 etot, etot0;                             // Total energy
-  using buffer_t = Kokkos::View<double**, Kokkos::LayoutLeft>;    // recall declaration can
-                                                                  // include Kokkos::CudaSpace
+  double                 T0, T1, vx, vy;       // Physical constants
+  double                 dt;                   // Integration time-step
+  double                 eloc, etot, etot0;    // Total energy
+  using buffer_t = Kokkos::View<double*>;      // recall declaration can
+                                               // include Kokkos::CudaSpace
   buffer_t                      T_left, T_right, T_up, T_down;
   buffer_t                      T_left_out, T_right_out, T_up_out, T_down_out;
+  int                           mpi_active_requests = 0;
+  MPI_Request                   mpi_requests_recv[4];
+  MPI_Request                   mpi_requests_send[4];
 
   Kokkos::DefaultExecutionSpace E_left
     = SpaceInstance<Kokkos::DefaultExecutionSpace>::create();
@@ -198,41 +189,142 @@ struct System {
     imin = nghost, imax = nghost + lx;
     jmin = nghost, jmax = nghost + ly;
 
-    T         = Kokkos::View<double**>("System::T", sx, sy);
-    Ti        = Kokkos::View<double**>("System::Ti", sx, sy);
-    dT        = Kokkos::View<double**>("System::dT", sx, sy);
-    io_recast = Kokkos::View<double**>("System::io_recast", lx, ly);
+    T           = Kokkos::View<double**>("System::T", sx, sy);
+    Ti          = Kokkos::View<double**>("System::Ti", sx, sy);
+    dT          = Kokkos::View<double**>("System::dT", sx, sy);
+    io_recast   = Kokkos::View<double**>("System::io_recast", lx, ly);
 
-    // T = Kokkos::View<double***>("System::T", xup - xdown, yup - ydown, Z_hi - Z_lo);
-    // dT = Kokkos::View<double***>("System::dT", T.extent(0), T.extent(1), T.extent(2));
-    // Kokkos::deep_copy(T,T0);
+    // incoming halos
+    T_left      = buffer_t("System::T_left", sy);
+    T_right     = buffer_t("System::T_right", sy);
+    T_down      = buffer_t("System::T_down", sx);
+    T_up        = buffer_t("System::T_up", sx);
 
-    // // incoming halos
-    // if(xdown != 0) T_left  = buffer_t("System::T_left" , yup - ydown, Z_hi - Z_lo);
-    // if(xup != X) T_right = buffer_t("System::T_right", yup - ydown, Z_hi - Z_lo);
-    // if(ydown != 0) T_down  = buffer_t("System::T_down" , xup - xdown, Z_hi - Z_lo);
-    // if(yup != Y) T_up    = buffer_t("System::T_up"   , xup - xdown, Z_hi - Z_lo);
-    // if(Z_lo != 0) T_front = buffer_t("System::T_front", xup - xdown, yup - ydown);
-    // if(Z_hi != Z) T_back  = buffer_t("System::T_back" , xup - xdown, yup - ydown);
+    // outgoing halo
+    T_left_out  = buffer_t("System::T_left_out", sy);
+    T_right_out = buffer_t("System::T_right_out", sy);
+    T_down_out  = buffer_t("System::T_down_out", sx);
+    T_up_out    = buffer_t("System::T_up_out", sx);
+  }
 
-    // // outgoing halo
-    // if(xdown != 0) T_left_out  = buffer_t("System::T_left_out" , yup - ydown, Z_hi - Z_lo);
-    // if(xup != X) T_right_out = buffer_t("System::T_right_out", yup - ydown, Z_hi - Z_lo);
-    // if(ydown != 0) T_down_out  = buffer_t("System::T_down_out" , xup - xdown, Z_hi - Z_lo);
-    // if(yup != Y) T_up_out    = buffer_t("System::T_up_out"   , xup - xdown, Z_hi - Z_lo);
-    // if(Z_lo != 0) T_front_out = buffer_t("System::T_front_out", xup - xdown, yup - ydown);
-    // if(Z_hi != Z) T_back_out  = buffer_t("System::T_back_out" , xup - xdown, yup - ydown);
+  void pack_T_halo() {
+    auto T_             = this->T;
+
+    mpi_active_requests = 0;
+    int mar             = 0;
+    Kokkos::deep_copy(E_left, T_left_out, Kokkos::subview(T, 1, Kokkos::ALL));
+    mar++;
+
+    Kokkos::deep_copy(E_down, T_down_out, Kokkos::subview(T, Kokkos::ALL, 1));
+    mar++;
+
+    Kokkos::deep_copy(E_right, T_right_out, Kokkos::subview(T, lx, Kokkos::ALL));
+    mar++;
+
+    Kokkos::deep_copy(E_up, T_up_out, Kokkos::subview(T, Kokkos::ALL, ly));
+    mar++;
+  }
+
+  void unpack_T_halo() {
+    auto T_        = this->T;
+    using policy_t = Kokkos::MDRangePolicy<Kokkos::Rank<2>>;
+
+    Kokkos::parallel_for(
+      "unpack", policy_t({ 0, 0 }, { sx, sy }), KOKKOS_LAMBDA(int i, int j) {
+        if (i == 0)
+          T_(i, j) = T_left(j);
+        if (j == 0)
+          T_(i, j) = T_down(i);
+        if (i == sx - 1)
+          T_(i, j) = T_right(j);
+        if (j == sy - 1)
+          T_(i, j) = T_up(i);
+      });
+  }
+
+  void exchange_T_halo() {
+    int mar = 0;
+    int tag;
+
+    E_left.fence();
+    tag = 0;
+    if (xdown == 0)
+      tag = 1;
+    comm.isend_irecv(
+      comm.left, T_left_out, T_left, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
+    mar++;
+
+    E_down.fence();
+    tag = 0;
+    if (ydown == 0)
+      tag = 1;
+    comm.isend_irecv(
+      comm.down, T_down_out, T_down, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
+    mar++;
+
+    E_right.fence();
+    tag = 0;
+    if (xup == nx)
+      tag = 1;
+    comm.isend_irecv(
+      comm.right, T_right_out, T_right, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
+    mar++;
+
+    E_up.fence();
+    tag = 0;
+    if (yup == ny)
+      tag = 1;
+    comm.isend_irecv(
+      comm.up, T_up_out, T_up, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
+    mar++;
+    mpi_active_requests = mar;
+  }
+
+  void pack_Ti_halo() {
+    auto Ti_            = this->Ti;
+
+    mpi_active_requests = 0;
+    int mar             = 0;
+    Kokkos::deep_copy(E_left, T_left_out, Kokkos::subview(Ti, 1, Kokkos::ALL));
+    mar++;
+
+    Kokkos::deep_copy(E_down, T_down_out, Kokkos::subview(Ti, Kokkos::ALL, 1));
+    mar++;
+
+    Kokkos::deep_copy(E_right, T_right_out, Kokkos::subview(Ti, lx, Kokkos::ALL));
+    mar++;
+
+    Kokkos::deep_copy(E_up, T_up_out, Kokkos::subview(Ti, Kokkos::ALL, ly));
+    mar++;
+  }
+
+  void unpack_Ti_halo() {
+    auto Ti_       = this->Ti;
+    using policy_t = Kokkos::MDRangePolicy<Kokkos::Rank<2>>;
+
+    Kokkos::parallel_for(
+      "unpack", policy_t({ 0, 0 }, { sx, sy }), KOKKOS_LAMBDA(int i, int j) {
+        if (i == 0)
+          Ti_(i, j) = T_left(j);
+        if (j == 0)
+          Ti_(i, j) = T_down(i);
+        if (i == sx - 1)
+          Ti_(i, j) = T_right(j);
+        if (j == sy - 1)
+          Ti_(i, j) = T_up(i);
+      });
   }
 
   void initialize() {
     using policy_t = Kokkos::MDRangePolicy<Kokkos::Rank<2>>;
+
     Kokkos::parallel_for("initial",
                          policy_t({ imin, jmin }, { imax, jmax }),
-                         Init_kernel(T, T1, T0, lx, ly, nghost));
+                         Init_kernel(T, T1, T0, nx, ny, xdown, ydown, nghost));
   }
 
   // Advance physical time
-  void evolve() {
+  void evolve(MPI_Comm comm_) {
     Kokkos::Timer timer;
     using policy_t  = Kokkos::MDRangePolicy<Kokkos::Rank<2>>;
 
@@ -248,6 +340,7 @@ struct System {
     auto lx_        = this->lx;
     auto ly_        = this->ly;
     auto nghost_    = this->nghost;
+    auto eloc_      = this->eloc;
     auto etot_      = this->etot;
     auto etot0_     = this->etot0;
     auto imin_      = this->imin;
@@ -260,11 +353,12 @@ struct System {
     auto yup_       = this->yup;
 
 #ifdef OUTPUT_ENABLED
-    adios2::ADIOS      adios(MPI_COMM_WORLD);
+    adios2::ADIOS      adios(comm_);
     adios2::IO         io = adios.DeclareIO("fieldIO");
     const adios2::Dims shape { static_cast<std::size_t>(nx), static_cast<std::size_t>(ny) };
-    const adios2::Dims start { static_cast<std::size_t>(xdown_), static_cast<std::size_t>(ydown_) };
-    const adios2::Dims count { static_cast<std::size_t>(xup_), static_cast<std::size_t>(yup_) };
+    const adios2::Dims start { static_cast<std::size_t>(xdown_),
+                               static_cast<std::size_t>(ydown_) };
+    const adios2::Dims count { static_cast<std::size_t>(lx_), static_cast<std::size_t>(ly_) };
     auto               io_variable = io.DefineVariable<double>("data", shape, start, count);
     io.SetEngine("HDF5");
 
@@ -276,7 +370,9 @@ struct System {
     Kokkos::parallel_reduce(
       policy_t({ imin_, jmin_ }, { imax_, jmax_ }),
       KOKKOS_LAMBDA(int i, int j, double& lval) { lval += 0.5 * T_(i, j) * T_(i, j); },
-      etot0_);
+      eloc_);
+
+    MPI_Reduce(&eloc_, &etot0_, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     for (int t = 0; t <= tmax; t++) {
       time_push -= timer.seconds();
@@ -298,10 +394,15 @@ struct System {
 
       time_bnd -= timer.seconds();
 
-      //  Exchange halo for periodic boundary
-      Kokkos::parallel_for("Boundary2",
-                           policy_t({ imin_, 0 }, { imax_, nghost_ }),
-                           Boundary_kernel(Ti_, nx_, ny_, nghost_));
+      pack_Ti_halo();
+      exchange_T_halo();
+
+      if (mpi_active_requests > 0) {
+        MPI_Waitall(mpi_active_requests, mpi_requests_send, MPI_STATUSES_IGNORE);
+        MPI_Waitall(mpi_active_requests, mpi_requests_recv, MPI_STATUSES_IGNORE);
+      }
+
+      unpack_Ti_halo();
 
       time_bnd += timer.seconds();
 
@@ -323,10 +424,15 @@ struct System {
 
       time_bnd -= timer.seconds();
 
-      //  Exchange halo for periodic boundary
-      Kokkos::parallel_for("Boundary2",
-                           policy_t({ nghost_, 0 }, { imax_, nghost_ }),
-                           Boundary_kernel(T_, nx_, ny_, nghost_));
+      pack_T_halo();
+      exchange_T_halo();
+
+      if (mpi_active_requests > 0) {
+        MPI_Waitall(mpi_active_requests, mpi_requests_send, MPI_STATUSES_IGNORE);
+        MPI_Waitall(mpi_active_requests, mpi_requests_recv, MPI_STATUSES_IGNORE);
+      }
+
+      unpack_T_halo();
 
       time_bnd += timer.seconds();
 
@@ -336,7 +442,9 @@ struct System {
         Kokkos::parallel_reduce(
           policy_t({ imin_, jmin_ }, { imax_, jmax_ }),
           KOKKOS_LAMBDA(int i, int j, double& lval) { lval += 0.5 * T_(i, j) * T_(i, j); },
-          etot_);
+          eloc_);
+
+        MPI_Reduce(&eloc_, &etot_, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
 #ifdef OUTPUT_ENABLED
 
@@ -359,19 +467,24 @@ struct System {
 
       time_tot += timer.seconds();
 
-      printf("Timestep %i Timing (Wall: %lf; Total: %lf; Average: %lf)\n",
-             t,
-             timer.seconds(),
-             time_tot,
-             time_tot / t);
-      printf(
-        "Pusher: Timing (Total: %lf; %.2f%%)\n", time_push / t, time_push / time_tot * 100.0);
-      printf(
-        "Boundary: Timing (Total: %lf; %.2f%%)\n", time_bnd / t, time_bnd / time_tot * 100.0);
-      printf(
-        "Output: Timing (Total: %lf; %.2f%%)\n", time_dump / t, time_dump / time_tot * 100.0);
-      printf("Energy difference: %.2f%%\n", 100.0 * (etot_ - etot0_) / etot0_);
-      printf("\n");
+      if (comm.rank == 0) {
+        printf("Timestep %i Timing (Wall: %lf; Total: %lf; Average: %lf)\n",
+               t,
+               timer.seconds(),
+               time_tot,
+               time_tot / t);
+        printf("Pusher: Timing (Total: %lf; %.2f%%)\n",
+               time_push / t,
+               time_push / time_tot * 100.0);
+        printf("Boundary: Timing (Total: %lf; %.2f%%)\n",
+               time_bnd / t,
+               time_bnd / time_tot * 100.0);
+        printf("Output: Timing (Total: %lf; %.2f%%)\n",
+               time_dump / t,
+               time_dump / time_tot * 100.0);
+        printf("Energy difference: %.2f%%\n", 100.0 * (etot_ - etot0_) / etot0_);
+        printf("\n");
+      }
     }
 
 #ifdef OUTPUT_ENABLED
@@ -390,7 +503,7 @@ auto main(int argc, char* argv[]) -> int {
     System sys(MPI_COMM_WORLD);
     sys.setup_subdomain();
     sys.initialize();
-    sys.evolve();
+    sys.evolve(MPI_COMM_WORLD);
   }
   Kokkos::finalize();
 
