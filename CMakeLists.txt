@@ -5,6 +5,7 @@ set(PROJECT_NAME entity-mpi)
 project(${PROJECT_NAME}
   LANGUAGES CXX
 )
+
 find_package(Git QUIET)
 
 if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
@@ -58,6 +59,7 @@ endif()
 
 if(${Kokkos_ENABLE_CUDA})
   set(Kokkos_ENABLE_CUDA_LAMBDA ON CACHE BOOL "Enable CUDA lambda")
+  set(ADIOS2_USE_CUDA ON CACHE BOOL "Enable ADIOS2 CUDA support")
 endif()
 
 set(output OFF CACHE BOOL "Enable output")

@@ -97,7 +97,7 @@ struct CommHelper {
     MPI_Comm_rank(comm, &rank);
 
     mx    = 2;
-    my    = 2;
+    my    = 1;
     yint  = floor(rank / mx);
     xint  = rank - yint * mx;
     left  = xint == 0 ? 0 + (mx - 1) + mx * yint : rank - 1;
@@ -146,7 +146,7 @@ struct System {
   double                 T0, T1, vx, vy;       // Physical constants
   double                 dt;                   // Integration time-step
   double                 eloc, etot, etot0;    // Total energy
-  using buffer_t = Kokkos::View<double*>;      // recall declaration can
+  using buffer_t = Kokkos::View<double*,Kokkos::LayoutLeft, Kokkos::CudaSpace>;      // recall declaration can
                                                // include Kokkos::CudaSpace
   buffer_t                      T_left, T_right, T_up, T_down;
   buffer_t                      T_left_out, T_right_out, T_up_out, T_down_out;
@@ -246,34 +246,34 @@ struct System {
     int mar = 0;
     int tag;
 
-    E_left.fence();
     tag = 0;
     if (xdown == 0)
       tag = 1;
+    E_left.fence();
     comm.isend_irecv(
       comm.left, T_left_out, T_left, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
 
-    E_down.fence();
     tag = 0;
     if (ydown == 0)
       tag = 1;
+    E_down.fence();
     comm.isend_irecv(
       comm.down, T_down_out, T_down, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
 
-    E_right.fence();
     tag = 0;
     if (xup == nx)
       tag = 1;
+    E_right.fence();
     comm.isend_irecv(
       comm.right, T_right_out, T_right, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
 
-    E_up.fence();
     tag = 0;
     if (yup == ny)
       tag = 1;
+    E_up.fence();
     comm.isend_irecv(
       comm.up, T_up_out, T_up, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
@@ -354,6 +354,7 @@ struct System {
 
 #ifdef OUTPUT_ENABLED
     adios2::ADIOS      adios(comm_);
+    // adios2::ADIOS      adios;
     adios2::IO         io = adios.DeclareIO("fieldIO");
     const adios2::Dims shape { static_cast<std::size_t>(nx), static_cast<std::size_t>(ny) };
     const adios2::Dims start { static_cast<std::size_t>(xdown_),
@@ -402,7 +403,9 @@ struct System {
         MPI_Waitall(mpi_active_requests, mpi_requests_recv, MPI_STATUSES_IGNORE);
       }
 
-      unpack_Ti_halo();
+      // unpack_Ti_halo();
+
+      Kokkos::fence();
 
       time_bnd += timer.seconds();
 
@@ -424,15 +427,15 @@ struct System {
 
       time_bnd -= timer.seconds();
 
-      pack_T_halo();
-      exchange_T_halo();
+      // pack_T_halo();
+      // exchange_T_halo();
 
-      if (mpi_active_requests > 0) {
-        MPI_Waitall(mpi_active_requests, mpi_requests_send, MPI_STATUSES_IGNORE);
-        MPI_Waitall(mpi_active_requests, mpi_requests_recv, MPI_STATUSES_IGNORE);
-      }
+      // if (mpi_active_requests > 0) {
+      //   MPI_Waitall(mpi_active_requests, mpi_requests_send, MPI_STATUSES_IGNORE);
+      //   MPI_Waitall(mpi_active_requests, mpi_requests_recv, MPI_STATUSES_IGNORE);
+      // }
 
-      unpack_T_halo();
+      // unpack_T_halo();
 
       time_bnd += timer.seconds();
 
