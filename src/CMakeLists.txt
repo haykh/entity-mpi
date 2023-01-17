@@ -15,4 +15,4 @@ endif()
 
 endif()
 
-add_executable(${ENTITY_MPI} main.cpp)
+add_executable(${ENTITY_MPI} main2.cpp)
