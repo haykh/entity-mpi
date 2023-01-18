@@ -146,8 +146,10 @@ struct System {
   double                 T0, T1, vx, vy;       // Physical constants
   double                 dt;                   // Integration time-step
   double                 eloc, etot, etot0;    // Total energy
-  using buffer_t = Kokkos::View<double*,Kokkos::LayoutLeft, Kokkos::CudaSpace>;      // recall declaration can
-                                               // include Kokkos::CudaSpace
+  using buffer_t
+    = Kokkos::View<double*>;    // recall declaration
+                                                                       // can include
+                                                                       // Kokkos::CudaSpace
   buffer_t                      T_left, T_right, T_up, T_down;
   buffer_t                      T_left_out, T_right_out, T_up_out, T_down_out;
   int                           mpi_active_requests = 0;
@@ -403,7 +405,7 @@ struct System {
         MPI_Waitall(mpi_active_requests, mpi_requests_recv, MPI_STATUSES_IGNORE);
       }
 
-      // unpack_Ti_halo();
+      unpack_Ti_halo();
 
       Kokkos::fence();
 
@@ -427,15 +429,15 @@ struct System {
 
       time_bnd -= timer.seconds();
 
-      // pack_T_halo();
-      // exchange_T_halo();
+      pack_T_halo();
+      exchange_T_halo();
 
-      // if (mpi_active_requests > 0) {
-      //   MPI_Waitall(mpi_active_requests, mpi_requests_send, MPI_STATUSES_IGNORE);
-      //   MPI_Waitall(mpi_active_requests, mpi_requests_recv, MPI_STATUSES_IGNORE);
-      // }
+      if (mpi_active_requests > 0) {
+        MPI_Waitall(mpi_active_requests, mpi_requests_send, MPI_STATUSES_IGNORE);
+        MPI_Waitall(mpi_active_requests, mpi_requests_recv, MPI_STATUSES_IGNORE);
+      }
 
-      // unpack_T_halo();
+      unpack_T_halo();
 
       time_bnd += timer.seconds();
 
