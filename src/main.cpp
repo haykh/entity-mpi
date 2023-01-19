@@ -96,8 +96,8 @@ struct CommHelper {
     MPI_Comm_size(comm, &nranks);
     MPI_Comm_rank(comm, &rank);
 
-    mx    = 2;
-    my    = 1;
+    mx    = 4;
+    my    = 2;
     yint  = floor(rank / mx);
     xint  = rank - yint * mx;
     left  = xint == 0 ? 0 + (mx - 1) + mx * yint : rank - 1;
