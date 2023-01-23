@@ -1,1 +1,1 @@
-add_executable(${PROJECT_NAME}.xc main2.cpp)
+add_executable(${PROJECT_NAME}.xc main.cpp)

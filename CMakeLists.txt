@@ -8,7 +8,7 @@ project(${PROJECT_NAME}
 )
 
 find_package(Git QUIET)
-find_library(HDF5 /usr/local/hdf5/gcc/openmpi-4.1.0/1.10.6/)
+#find_library(HDF5 /usr/local/hdf5/gcc/openmpi-4.1.0/1.10.6/)
 
 if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
   option(GIT_SUBMODULE "Check submodules during build" ON)
