@@ -136,7 +136,7 @@ struct CommHelper {
 
 struct System {
   CommHelper             comm;
-  const int              nx = 1000, ny = 1000, nghost = 1;    // System size in grid points
+  const int              nx = 200, ny = 200, nghost = 1;    // System size in grid points
   int                    sx, sy, imin, imax, jmin, jmax, lx, ly;
   int                    tmax, iout;    // Number of timesteps, output interval
   Kokkos::View<double**> T, Ti, dT;     // Fields of physical variables
@@ -165,9 +165,9 @@ struct System {
 
   // Specify mesh and physical constants
   System(MPI_Comm comm_) : comm(comm_) {
-    tmax = 2000;
+    tmax = 4000;
     T0 = 0.0, T1 = 1.0, vx = 0.5, vy = 0.0;
-    dt = 0.5, iout = 20;
+    dt = 0.5, iout = 40;
     Kokkos::deep_copy(T, T0);
     Kokkos::deep_copy(Ti, T0);
   }
@@ -183,8 +183,6 @@ struct System {
     yup   = ydown + ly;
     if (yup > ny)
       yup = ny;
-
-    printf("My Domain: %i (%i %i) (%i %i)\n", comm.rank, xdown, xup, ydown, yup);
 
     sx = lx + 2 * nghost, sy = ly + 2 * nghost;
     imin = nghost, imax = nghost + lx;
@@ -396,9 +394,20 @@ struct System {
   void initialize() {
     using policy_t = Kokkos::MDRangePolicy<Kokkos::Rank<2>>;
 
+    auto nx_        = this->nx;
+    auto ny_        = this->ny;
+    auto xdown_     = this->xdown;
+    auto ydown_     = this->ydown;
+    auto imin_      = this->imin;
+    auto imax_      = this->imax;
+    auto jmin_      = this->jmin;
+    auto jmax_      = this->jmax;
+    auto nghost_    = this->nghost;
+    auto T_         = this->T;
+
     Kokkos::parallel_for("initial",
-                         policy_t({ imin, jmin }, { imax, jmax }),
-                         Init_kernel(T, T1, T0, nx, ny, xdown, ydown, nghost));
+                         policy_t({ imin_, jmin_ }, { imax_, jmax_ }),
+                         Init_kernel(T_, T1, T0, nx_, ny_, xdown_, ydown_, nghost_));
   }
 
   // Advance physical time
@@ -435,15 +444,16 @@ struct System {
     // adios2::ADIOS      adios;
     adios2::IO         io = adios.DeclareIO("fieldIO");
     const adios2::Dims shape { static_cast<std::size_t>(nx), static_cast<std::size_t>(ny) };
-    const adios2::Dims start { static_cast<std::size_t>(xdown_),
-                               static_cast<std::size_t>(ydown_) };
-    const adios2::Dims count { static_cast<std::size_t>(lx_), static_cast<std::size_t>(ly_) };
+    const adios2::Dims start { static_cast<std::size_t>(xdown),
+                               static_cast<std::size_t>(ydown) };
+    const adios2::Dims count { static_cast<std::size_t>(lx), static_cast<std::size_t>(ly) };
     auto               io_variable = io.DefineVariable<double>("data", shape, start, count);
     io.SetEngine("HDF5");
 
     adios2::Engine adios_engine = io.Open("../Temp.h5", adios2::Mode::Write);
 #endif
 
+    printf("My Domain: %i (%i %i) (%i %i) (%i %i) (%i %i)\n", comm.rank, xdown, xup, ydown, yup, nx, ny, lx, ly);
     double time_push = 0.0, time_dump = 0.0, time_bnd = 0.0, time_tot = 0.0;
 
     Kokkos::parallel_reduce(

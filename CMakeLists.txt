@@ -8,7 +8,6 @@ project(${PROJECT_NAME}
 )
 
 find_package(Git QUIET)
-#find_library(HDF5 /usr/local/hdf5/gcc/openmpi-4.1.0/1.10.6/)
 
 if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
   option(GIT_SUBMODULE "Check submodules during build" ON)
@@ -66,7 +65,6 @@ endif()
 
 if(${Kokkos_ENABLE_CUDA})
   set(Kokkos_ENABLE_CUDA_LAMBDA ON CACHE BOOL "Enable CUDA lambda")
-  #set(ADIOS2_USE_CUDA ON CACHE BOOL "Enable ADIOS2 CUDA support")
 endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/kokkos extern/kokkos)
@@ -81,10 +79,13 @@ endif()
 
 # -------------------------- ADIOS2 settings -------------------------- #
 if(${output} STREQUAL "ON")
-  set (HDF5_ROOT ~/Codes/hdf5/build/install)
+  set (HDF5_ROOT /home/hakobyan/Codes/hdf5/build/install)
 
   # language support
   set(ADIOS2_USE_CUDA OFF CACHE BOOL "Enable ADIOS2 CUDA support")
+  if(${Kokkos_ENABLE_CUDA})
+    set(ADIOS2_USE_CUDA ON CACHE BOOL "Enable ADIOS2 CUDA support")
+  endif()
   set(ADIOS2_USE_Python OFF CACHE BOOL "Use Python for ADIOS2")
   set(ADIOS2_USE_Fortran OFF CACHE BOOL "Use Fortran for ADIOS2")
   set(ADIOS2_USE_ZeroMQ OFF CACHE BOOL "Use ZeroMQ for ADIOS2")
