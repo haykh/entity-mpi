@@ -448,6 +448,8 @@ struct System {
                                static_cast<std::size_t>(ydown) };
     const adios2::Dims count { static_cast<std::size_t>(lx), static_cast<std::size_t>(ly) };
     auto               io_variable = io.DefineVariable<double>("data", shape, start, count);
+    auto               xout = io.DefineVariable<double>("xgrid", shape, start, count);
+    auto               yout = io.DefineVariable<double>("ygrid", shape, start, count);
     io.SetEngine("HDF5");
 
     adios2::Engine adios_engine = io.Open("../Temp.h5", adios2::Mode::Write);
@@ -529,6 +531,8 @@ struct System {
 
 #ifdef OUTPUT_ENABLED
 
+        adios_engine.BeginStep();
+        
         Kokkos::parallel_for(
           "recast", policy_t({ 0, 0 }, { lx_, ly_ }), KOKKOS_LAMBDA(int i, int j) {
             io_recast_(i, j) = T_(i + nghost_, j + nghost_);
@@ -536,9 +540,26 @@ struct System {
 
         auto outvec = Kokkos::create_mirror_view(io_recast_);
         Kokkos::deep_copy(outvec, io_recast_);
-
-        adios_engine.BeginStep();
         adios_engine.Put<double>(io_variable, outvec);
+
+        Kokkos::parallel_for(
+          "recast", policy_t({ 0, 0 }, { lx_, ly_ }), KOKKOS_LAMBDA(int i, int j) {
+            io_recast_(i, j) = ydown_ + j;
+          });
+        printf("ydown %i \n", ydown_);
+
+        Kokkos::deep_copy(outvec, io_recast_);
+        adios_engine.Put<double>(yout, outvec);
+
+        Kokkos::parallel_for(
+          "recast", policy_t({ 0, 0 }, { lx_, ly_ }), KOKKOS_LAMBDA(int i, int j) {
+            io_recast_(i, j) = xdown_ + i;
+          });
+        printf("xdown %i \n", xdown_);
+
+        Kokkos::deep_copy(outvec, io_recast_);
+        adios_engine.Put<double>(xout, outvec);
+
         adios_engine.EndStep();
 
 #endif
