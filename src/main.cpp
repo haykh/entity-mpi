@@ -96,8 +96,8 @@ struct CommHelper {
     MPI_Comm_size(comm, &nranks);
     MPI_Comm_rank(comm, &rank);
 
-    mx    = 4;
-    my    = 2;
+    mx    = 2;
+    my    = 1;
     yint  = floor(rank / mx);
     xint  = rank - yint * mx;
     left  = xint == 0 ? 0 + (mx - 1) + mx * yint : rank - 1;
@@ -344,7 +344,6 @@ struct System {
     Kokkos::deep_copy(E_down, T_down_, invec1);
     Kokkos::deep_copy(E_right, T_right_, invec2);
     Kokkos::deep_copy(E_up, T_up_, invec3);
-
   }
 
   void pack_Ti_halo() {
@@ -506,12 +505,12 @@ struct System {
 
       time_dump -= timer.seconds();
 
-        Kokkos::parallel_reduce(
-          policy_t({ imin_, jmin_ }, { imax_, jmax_ }),
-          KOKKOS_LAMBDA(int i, int j, double& lval) { lval += 0.5 * T_(i, j) * T_(i, j); },
-          eloc_);
+      Kokkos::parallel_reduce(
+        policy_t({ imin_, jmin_ }, { imax_, jmax_ }),
+        KOKKOS_LAMBDA(int i, int j, double& lval) { lval += 0.5 * T_(i, j) * T_(i, j); },
+        eloc_);
 
-        MPI_Reduce(&eloc_, &etot_, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+      MPI_Reduce(&eloc_, &etot_, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
       time_dump += timer.seconds();
 
@@ -572,10 +571,10 @@ auto main(int argc, char* argv[]) -> int {
 
   Kokkos::initialize(argc, argv);
   {
-    System sys(MPI_COMM_WORLD);
-    sys.setup_subdomain();
-    sys.initialize();
-    sys.evolve(MPI_COMM_WORLD);
+    // System sys(MPI_COMM_WORLD);
+    // sys.setup_subdomain();
+    // sys.initialize();
+    // sys.evolve(MPI_COMM_WORLD);
   }
   Kokkos::finalize();
 
