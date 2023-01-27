@@ -541,7 +541,6 @@ struct System {
 
         auto outvec = Kokkos::create_mirror_view(io_recast_);
         Kokkos::deep_copy(outvec, io_recast_);
-        io_variable.SetMemorySpace(adios2::MemorySpace::CudaSpace);
         adios_engine.Put<double>(io_variable, io_recast.data());
 
         adios_engine.EndStep();
