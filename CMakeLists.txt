@@ -77,9 +77,16 @@ if (${mpi} STREQUAL "ON")
   add_compile_options("-D MPI_ENABLED")
 endif()
 
+# if (${cudampi} STREQUAL "ON")
+#   find_package(MPI REQUIRED)
+#   include_directories(${MPI_CXX_INCLUDE_PATH})
+#   add_compile_options("-D CUDAMPI_ENABLED")
+# endif()
+
 # -------------------------- ADIOS2 settings -------------------------- #
 if(${output} STREQUAL "ON")
-  set (HDF5_ROOT /home/hakobyan/Codes/hdf5/build/install)
+  set (HDF5_ROOT /home/mahlmann/Public/hdf5-1.14.0-cuda)
+  SET (HDF5_PLUGIN_PATH /home/mahlmann/Public/vfd-cuda)
 
   # language support
   set(ADIOS2_USE_CUDA OFF CACHE BOOL "Enable ADIOS2 CUDA support")
@@ -114,9 +121,9 @@ include_directories(${EXTERN_DIR})
 
 # linking
 link_libraries(Kokkos::kokkos)
-if(${mpi} STREQUAL "ON")
-  link_libraries(MPI::MPI_CXX)
-endif()
+# if(${mpi} STREQUAL "ON")
+#   link_libraries(MPI::MPI_CXX)
+# endif()
 if(${output} STREQUAL "ON")
   if (${mpi} STREQUAL "ON")
     link_libraries(adios2::cxx11_mpi)
