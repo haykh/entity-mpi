@@ -136,7 +136,7 @@ struct CommHelper {
 
 struct System {
   CommHelper             comm;
-  const int              nx = 200, ny = 200, nghost = 1;    // System size in grid points
+  const int              nx = 20000, ny = 1000, nghost = 1;    // System size in grid points
   int                    sx, sy, imin, imax, jmin, jmax, lx, ly;
   int                    tmax, iout;    // Number of timesteps, output interval
   Kokkos::View<double**> T, Ti, dT;     // Fields of physical variables
@@ -165,7 +165,7 @@ struct System {
 
   // Specify mesh and physical constants
   System(MPI_Comm comm_) : comm(comm_) {
-    tmax = 4000;
+    tmax = 100;
     T0 = 0.0, T1 = 1.0, vx = 0.5, vy = 0.0;
     dt = 0.5, iout = 40;
     Kokkos::deep_copy(T, T0);
@@ -233,16 +233,16 @@ struct System {
 
     mpi_active_requests = 0;
     int mar             = 0;
-    Kokkos::deep_copy(E_left, T_left_out_, Kokkos::subview(T_, 1, Kokkos::ALL));
+    Kokkos::deep_copy(T_left_out_, Kokkos::subview(T_, 1, Kokkos::ALL));
     mar++;
 
-    Kokkos::deep_copy(E_down, T_down_out_, Kokkos::subview(T_, Kokkos::ALL, 1));
+    Kokkos::deep_copy(T_down_out_, Kokkos::subview(T_, Kokkos::ALL, 1));
     mar++;
 
-    Kokkos::deep_copy(E_right, T_right_out_, Kokkos::subview(T_, lx_, Kokkos::ALL));
+    Kokkos::deep_copy(T_right_out_, Kokkos::subview(T_, lx_, Kokkos::ALL));
     mar++;
 
-    Kokkos::deep_copy(E_up, T_up_out_, Kokkos::subview(T_, Kokkos::ALL, ly_));
+    Kokkos::deep_copy(T_up_out_, Kokkos::subview(T_, Kokkos::ALL, ly_));
     mar++;
   }
 
@@ -297,7 +297,7 @@ struct System {
     // E_left.fence();
     // comm.isend_irecv(
     //   comm.left, outvec0, invec0, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
-    E_left.fence();
+    // E_left.fence();
     comm.isend_irecv(
       comm.left, T_left_out_, T_left_, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
@@ -308,7 +308,7 @@ struct System {
     // auto outvec1 = Kokkos::create_mirror_view(T_down_out_);
     // auto invec1  = Kokkos::create_mirror_view(T_down_);
     // Kokkos::deep_copy(E_down, outvec1, T_down_out_);
-    E_down.fence();
+    // E_down.fence();
     comm.isend_irecv(
       comm.down, T_down_out_, T_down_, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
@@ -319,7 +319,7 @@ struct System {
     // auto outvec2 = Kokkos::create_mirror_view(T_right_out_);
     // auto invec2  = Kokkos::create_mirror_view(T_right_);
     // Kokkos::deep_copy(E_right, outvec2, T_right_out_);
-    E_right.fence();
+    // E_right.fence();
     comm.isend_irecv(
       comm.right, T_right_out_, T_right_, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
@@ -330,7 +330,7 @@ struct System {
     // auto outvec3 = Kokkos::create_mirror_view(T_up_out_);
     // auto invec3  = Kokkos::create_mirror_view(T_up_);
     // Kokkos::deep_copy(E_up, outvec3, T_up_out_);
-    E_up.fence();
+    // E_up.fence();
     comm.isend_irecv(
       comm.up, T_up_out_, T_up_, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
@@ -358,16 +358,16 @@ struct System {
 
     mpi_active_requests = 0;
     int mar             = 0;
-    Kokkos::deep_copy(E_left, T_left_out_, Kokkos::subview(Ti_, 1, Kokkos::ALL));
+    Kokkos::deep_copy(T_left_out_, Kokkos::subview(Ti_, 1, Kokkos::ALL));
     mar++;
 
-    Kokkos::deep_copy(E_down, T_down_out_, Kokkos::subview(Ti_, Kokkos::ALL, 1));
+    Kokkos::deep_copy(T_down_out_, Kokkos::subview(Ti_, Kokkos::ALL, 1));
     mar++;
 
-    Kokkos::deep_copy(E_right, T_right_out_, Kokkos::subview(Ti_, lx_, Kokkos::ALL));
+    Kokkos::deep_copy(T_right_out_, Kokkos::subview(Ti_, lx_, Kokkos::ALL));
     mar++;
 
-    Kokkos::deep_copy(E_up, T_up_out_, Kokkos::subview(Ti_, Kokkos::ALL, ly_));
+    Kokkos::deep_copy(T_up_out_, Kokkos::subview(Ti_, Kokkos::ALL, ly_));
     mar++;
   }
 
@@ -447,13 +447,13 @@ struct System {
     // adios2::ADIOS      adios;
     adios2::IO         io = adios.DeclareIO("fieldIO");
     const adios2::Dims shape { static_cast<std::size_t>(ny), static_cast<std::size_t>(nx) };
-    const adios2::Dims start { static_cast<std::size_t>(ydown),
-                               static_cast<std::size_t>(xdown) };
-    const adios2::Dims count { static_cast<std::size_t>(ly), static_cast<std::size_t>(lx) };
+    const adios2::Dims start { static_cast<std::size_t>(xdown),
+                               static_cast<std::size_t>(ydown) };
+    const adios2::Dims count { static_cast<std::size_t>(lx), static_cast<std::size_t>(ly) };
     auto               io_variable = io.DefineVariable<double>("data", shape, start, count);
-    io.SetEngine("BP5");
+    io.SetEngine("HDF5");
 
-    adios2::Engine adios_engine = io.Open("../Temp.bp", adios2::Mode::Write);
+    adios2::Engine adios_engine = io.Open("../Temp.h5", adios2::Mode::Write);
 #endif
 
     printf("My Domain: %i (%i %i) (%i %i) (%i %i) (%i %i)\n", comm.rank, xdown, xup, ydown, yup, nx, ny, lx, ly);
@@ -533,15 +533,11 @@ struct System {
 #ifdef OUTPUT_ENABLED
 
         adios_engine.BeginStep();
-        
-        Kokkos::parallel_for(
-          "recast", policy_t({ 0, 0 }, { lx_, ly_ }), KOKKOS_LAMBDA(int i, int j) {
-            io_recast_(i, j) = T_(i + nghost_, j + nghost_);
-          });
 
+        Kokkos::deep_copy(io_recast_, Kokkos::subview(T_ , Kokkos::make_pair(1, lx_+1), Kokkos::make_pair(1, ly_+1)));
         auto outvec = Kokkos::create_mirror_view(io_recast_);
         Kokkos::deep_copy(outvec, io_recast_);
-        adios_engine.Put<double>(io_variable, io_recast.data());
+        adios_engine.Put<double>(io_variable, outvec);
 
         adios_engine.EndStep();
 

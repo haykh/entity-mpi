@@ -9,6 +9,10 @@ project(${PROJECT_NAME}
 
 find_package(Git QUIET)
 
+if(${Kokkos_ENABLE_CUDA})
+  set(Kokkos_ENABLE_CUDA_LAMBDA ON CACHE BOOL "Enable CUDA lambda")
+endif()
+
 if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
   option(GIT_SUBMODULE "Check submodules during build" ON)
 
@@ -63,10 +67,6 @@ else()
   message(STATUS "Debug mode")
 endif()
 
-if(${Kokkos_ENABLE_CUDA})
-  set(Kokkos_ENABLE_CUDA_LAMBDA ON CACHE BOOL "Enable CUDA lambda")
-endif()
-
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extern/kokkos extern/kokkos)
 
 
@@ -86,12 +86,12 @@ endif()
 # -------------------------- ADIOS2 settings -------------------------- #
 if(${output} STREQUAL "ON")
   set (HDF5_ROOT /home/mahlmann/Public/hdf5-1.14.0-cuda)
-  SET (HDF5_PLUGIN_PATH /home/mahlmann/Public/vfd-cuda)
 
   # language support
-  set(ADIOS2_USE_CUDA OFF CACHE BOOL "Enable ADIOS2 CUDA support")
   if(${Kokkos_ENABLE_CUDA})
-    set(ADIOS2_USE_CUDA ON CACHE BOOL "Enable ADIOS2 CUDA support")
+    set(ADIOS2_USE_CUDA OFF CACHE BOOL "Enable ADIOS2 CUDA support")
+  else()
+    set(ADIOS2_USE_CUDA OFF CACHE BOOL "Disable ADIOS2 CUDA support")
   endif()
   set(ADIOS2_USE_Python OFF CACHE BOOL "Use Python for ADIOS2")
   set(ADIOS2_USE_Fortran OFF CACHE BOOL "Use Fortran for ADIOS2")
@@ -121,9 +121,9 @@ include_directories(${EXTERN_DIR})
 
 # linking
 link_libraries(Kokkos::kokkos)
-# if(${mpi} STREQUAL "ON")
-#   link_libraries(MPI::MPI_CXX)
-# endif()
+if(${mpi} STREQUAL "ON")
+  link_libraries(MPI::MPI_CXX)
+endif()
 if(${output} STREQUAL "ON")
   if (${mpi} STREQUAL "ON")
     link_libraries(adios2::cxx11_mpi)
