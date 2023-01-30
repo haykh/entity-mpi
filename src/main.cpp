@@ -136,7 +136,7 @@ struct CommHelper {
 
 struct System {
   CommHelper             comm;
-  const int              nx = 20000, ny = 1000, nghost = 1;    // System size in grid points
+  const int              nx = 8000, ny = 4000, nghost = 1;    // System size in grid points
   int                    sx, sy, imin, imax, jmin, jmax, lx, ly;
   int                    tmax, iout;    // Number of timesteps, output interval
   Kokkos::View<double**> T, Ti, dT;     // Fields of physical variables
@@ -470,17 +470,17 @@ struct System {
       time_push -= timer.seconds();
       time_tot -= timer.seconds();
 
-      //  Do a Crank-Nicolson stage
-      Kokkos::parallel_for(
-        "CN1", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
-          dT_(i, j) = 0.5 * vx_ * (T_(i + 1, j) - T_(i - 1, j));
-          dT_(i, j) += 0.5 * vy_ * (T_(i, j + 1) - T_(i, j - 1));
-        });
+      // //  Do a Crank-Nicolson stage
+      // Kokkos::parallel_for(
+      //   "CN1", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
+      //     dT_(i, j) = 0.5 * vx_ * (T_(i + 1, j) - T_(i - 1, j));
+      //     dT_(i, j) += 0.5 * vy_ * (T_(i, j + 1) - T_(i, j - 1));
+      //   });
 
-      Kokkos::parallel_for(
-        "Euler1", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
-          Ti_(i, j) = T_(i, j) + 0.5 * dt_ * dT_(i, j);
-        });
+      // Kokkos::parallel_for(
+      //   "Euler1", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
+      //     Ti_(i, j) = T_(i, j) + 0.5 * dt_ * dT_(i, j);
+      //   });
 
       time_push += timer.seconds();
 
@@ -494,17 +494,17 @@ struct System {
 
       time_push -= timer.seconds();
 
-      //  Do final Crank-Nicolson stage
-      Kokkos::parallel_for(
-        "CN2", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
-          dT_(i, j) = 0.5 * vx_ * (Ti_(i + 1, j) - Ti_(i - 1, j));
-          dT_(i, j) += 0.5 * vy_ * (Ti_(i, j + 1) - Ti_(i, j - 1));
-        });
+      // //  Do final Crank-Nicolson stage
+      // Kokkos::parallel_for(
+      //   "CN2", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
+      //     dT_(i, j) = 0.5 * vx_ * (Ti_(i + 1, j) - Ti_(i - 1, j));
+      //     dT_(i, j) += 0.5 * vy_ * (Ti_(i, j + 1) - Ti_(i, j - 1));
+      //   });
 
-      Kokkos::parallel_for(
-        "Euler2", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
-          T_(i, j) += dt_ * dT_(i, j);
-        });
+      // Kokkos::parallel_for(
+      //   "Euler2", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
+      //     T_(i, j) += dt_ * dT_(i, j);
+      //   });
 
       time_push += timer.seconds();
 
@@ -518,12 +518,12 @@ struct System {
 
       time_dump -= timer.seconds();
 
-      Kokkos::parallel_reduce(
-        policy_t({ imin_, jmin_ }, { imax_, jmax_ }),
-        KOKKOS_LAMBDA(int i, int j, double& lval) { lval += 0.5 * T_(i, j) * T_(i, j); },
-        eloc_);
+      // Kokkos::parallel_reduce(
+      //   policy_t({ imin_, jmin_ }, { imax_, jmax_ }),
+      //   KOKKOS_LAMBDA(int i, int j, double& lval) { lval += 0.5 * T_(i, j) * T_(i, j); },
+      //   eloc_);
 
-      MPI_Reduce(&eloc_, &etot_, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+      // MPI_Reduce(&eloc_, &etot_, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
       time_dump += timer.seconds();
 
