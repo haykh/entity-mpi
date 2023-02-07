@@ -136,7 +136,7 @@ struct CommHelper {
 
 struct System {
   CommHelper             comm;
-  const int              nx = 8000, ny = 4000, nghost = 1;    // System size in grid points
+  const int              nx = 800, ny = 400, nghost = 1;    // System size in grid points
   int                    sx, sy, imin, imax, jmin, jmax, lx, ly;
   int                    tmax, iout;    // Number of timesteps, output interval
   Kokkos::View<double**> T, Ti, dT;     // Fields of physical variables
@@ -165,7 +165,7 @@ struct System {
 
   // Specify mesh and physical constants
   System(MPI_Comm comm_) : comm(comm_) {
-    tmax = 100;
+    tmax = 4000;
     T0 = 0.0, T1 = 1.0, vx = 0.5, vy = 0.0;
     dt = 0.5, iout = 40;
     Kokkos::deep_copy(T, T0);
@@ -222,53 +222,6 @@ struct System {
     std::cout << msg.str();
   }
 
-  void pack_T_halo() {
-    auto T_             = this->T;
-    auto T_left_out_    = this->T_left_out;
-    auto T_down_out_    = this->T_down_out;
-    auto T_right_out_   = this->T_right_out;
-    auto T_up_out_      = this->T_up_out;
-    auto lx_            = this->lx;
-    auto ly_            = this->ly;
-
-    mpi_active_requests = 0;
-    int mar             = 0;
-    Kokkos::deep_copy(T_left_out_, Kokkos::subview(T_, 1, Kokkos::ALL));
-    mar++;
-
-    Kokkos::deep_copy(T_down_out_, Kokkos::subview(T_, Kokkos::ALL, 1));
-    mar++;
-
-    Kokkos::deep_copy(T_right_out_, Kokkos::subview(T_, lx_, Kokkos::ALL));
-    mar++;
-
-    Kokkos::deep_copy(T_up_out_, Kokkos::subview(T_, Kokkos::ALL, ly_));
-    mar++;
-  }
-
-  void unpack_T_halo() {
-    auto T_        = this->T;
-    auto T_left_   = this->T_left;
-    auto T_down_   = this->T_down;
-    auto T_right_  = this->T_right;
-    auto T_up_     = this->T_up;
-    auto sx_       = this->sx;
-    auto sy_       = this->sy;
-    using policy_t = Kokkos::MDRangePolicy<Kokkos::Rank<2>>;
-
-    Kokkos::parallel_for(
-      "unpack", policy_t({ 0, 0 }, { sx_, sy_ }), KOKKOS_LAMBDA(int i, int j) {
-        if (i == 0)
-          T_(i, j) = T_left_(j);
-        if (j == 0)
-          T_(i, j) = T_down_(i);
-        if (i == sx_ - 1)
-          T_(i, j) = T_right_(j);
-        if (j == sy_ - 1)
-          T_(i, j) = T_up_(i);
-      });
-  }
-
   void exchange_T_halo() {
     auto T_left_out_  = this->T_left_out;
     auto T_down_out_  = this->T_down_out;
@@ -284,6 +237,9 @@ struct System {
     auto yup_         = this->yup;
     auto nx_          = this->nx;
     auto ny_          = this->ny;
+    auto T_          = this->T;
+    auto lx_          = this->lx;
+    auto ly_          = this->ly;
 
     int  mar          = 0;
     int  tag;
@@ -291,13 +247,7 @@ struct System {
     tag = 0;
     if (xdown_ == 0)
       tag = 1;
-    // auto outvec0 = Kokkos::create_mirror_view(T_left_out_);
-    // auto invec0  = Kokkos::create_mirror_view(T_left_);
-    // Kokkos::deep_copy(E_left, outvec0, T_left_out_);
-    // E_left.fence();
-    // comm.isend_irecv(
-    //   comm.left, outvec0, invec0, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
-    // E_left.fence();
+    Kokkos::deep_copy(T_left_out_, Kokkos::subview(T_, 1, Kokkos::ALL));
     comm.isend_irecv(
       comm.left, T_left_out_, T_left_, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
@@ -305,10 +255,7 @@ struct System {
     tag = 0;
     if (ydown_ == 0)
       tag = 1;
-    // auto outvec1 = Kokkos::create_mirror_view(T_down_out_);
-    // auto invec1  = Kokkos::create_mirror_view(T_down_);
-    // Kokkos::deep_copy(E_down, outvec1, T_down_out_);
-    // E_down.fence();
+    Kokkos::deep_copy(T_down_out_, Kokkos::subview(T_, Kokkos::ALL, 1));
     comm.isend_irecv(
       comm.down, T_down_out_, T_down_, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
@@ -316,10 +263,7 @@ struct System {
     tag = 0;
     if (xup_ == nx_)
       tag = 1;
-    // auto outvec2 = Kokkos::create_mirror_view(T_right_out_);
-    // auto invec2  = Kokkos::create_mirror_view(T_right_);
-    // Kokkos::deep_copy(E_right, outvec2, T_right_out_);
-    // E_right.fence();
+    Kokkos::deep_copy(T_right_out_, Kokkos::subview(T_, lx_, Kokkos::ALL));
     comm.isend_irecv(
       comm.right, T_right_out_, T_right_, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
@@ -327,10 +271,7 @@ struct System {
     tag = 0;
     if (yup_ == ny_)
       tag = 1;
-    // auto outvec3 = Kokkos::create_mirror_view(T_up_out_);
-    // auto invec3  = Kokkos::create_mirror_view(T_up_);
-    // Kokkos::deep_copy(E_up, outvec3, T_up_out_);
-    // E_up.fence();
+    Kokkos::deep_copy(T_up_out_, Kokkos::subview(T_, Kokkos::ALL, ly_));
     comm.isend_irecv(
       comm.up, T_up_out_, T_up_, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
@@ -341,57 +282,79 @@ struct System {
       MPI_Waitall(mpi_active_requests, mpi_requests_recv, MPI_STATUSES_IGNORE);
     }
 
-    // Kokkos::deep_copy(E_left, T_left_, invec0);
-    // Kokkos::deep_copy(E_down, T_down_, invec1);
-    // Kokkos::deep_copy(E_right, T_right_, invec2);
-    // Kokkos::deep_copy(E_up, T_up_, invec3);
+    Kokkos::deep_copy(Kokkos::subview(T_, 0, Kokkos::ALL), T_left_);
+    Kokkos::deep_copy(Kokkos::subview(T_, Kokkos::ALL, 0), T_down_);
+    Kokkos::deep_copy(Kokkos::subview(T_, lx_ + 1, Kokkos::ALL), T_right_);
+    Kokkos::deep_copy(Kokkos::subview(T_, Kokkos::ALL, ly_ + 1), T_up_);
+
   }
 
-  void pack_Ti_halo() {
-    auto Ti_            = this->Ti;
-    auto T_left_out_    = this->T_left_out;
-    auto T_down_out_    = this->T_down_out;
-    auto T_right_out_   = this->T_right_out;
-    auto T_up_out_      = this->T_up_out;
-    auto lx_            = this->lx;
-    auto ly_            = this->ly;
 
-    mpi_active_requests = 0;
-    int mar             = 0;
-    Kokkos::deep_copy(T_left_out_, Kokkos::subview(Ti_, 1, Kokkos::ALL));
+  void exchange_Ti_halo() {
+    auto T_left_out_  = this->T_left_out;
+    auto T_down_out_  = this->T_down_out;
+    auto T_right_out_ = this->T_right_out;
+    auto T_up_out_    = this->T_up_out;
+    auto T_left_      = this->T_left;
+    auto T_down_      = this->T_down;
+    auto T_right_     = this->T_right;
+    auto T_up_        = this->T_up;
+    auto xdown_       = this->xdown;
+    auto xup_         = this->xup;
+    auto ydown_       = this->ydown;
+    auto yup_         = this->yup;
+    auto nx_          = this->nx;
+    auto ny_          = this->ny;
+    auto T_          = this->Ti;
+    auto lx_          = this->lx;
+    auto ly_          = this->ly;
+
+    int  mar          = 0;
+    int  tag;
+
+    tag = 0;
+    if (xdown_ == 0)
+      tag = 1;
+    Kokkos::deep_copy(T_left_out_, Kokkos::subview(T_, 1, Kokkos::ALL));
+    comm.isend_irecv(
+      comm.left, T_left_out_, T_left_, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
 
-    Kokkos::deep_copy(T_down_out_, Kokkos::subview(Ti_, Kokkos::ALL, 1));
+    tag = 0;
+    if (ydown_ == 0)
+      tag = 1;
+    Kokkos::deep_copy(T_down_out_, Kokkos::subview(T_, Kokkos::ALL, 1));
+    comm.isend_irecv(
+      comm.down, T_down_out_, T_down_, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
 
-    Kokkos::deep_copy(T_right_out_, Kokkos::subview(Ti_, lx_, Kokkos::ALL));
+    tag = 0;
+    if (xup_ == nx_)
+      tag = 1;
+    Kokkos::deep_copy(T_right_out_, Kokkos::subview(T_, lx_, Kokkos::ALL));
+    comm.isend_irecv(
+      comm.right, T_right_out_, T_right_, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
 
-    Kokkos::deep_copy(T_up_out_, Kokkos::subview(Ti_, Kokkos::ALL, ly_));
+    tag = 0;
+    if (yup_ == ny_)
+      tag = 1;
+    Kokkos::deep_copy(T_up_out_, Kokkos::subview(T_, Kokkos::ALL, ly_));
+    comm.isend_irecv(
+      comm.up, T_up_out_, T_up_, tag, &mpi_requests_send[mar], &mpi_requests_recv[mar]);
     mar++;
-  }
+    mpi_active_requests = mar;
 
-  void unpack_Ti_halo() {
-    auto Ti_       = this->Ti;
-    auto T_left_   = this->T_left;
-    auto T_down_   = this->T_down;
-    auto T_right_  = this->T_right;
-    auto T_up_     = this->T_up;
-    auto sx_       = this->sx;
-    auto sy_       = this->sy;
-    using policy_t = Kokkos::MDRangePolicy<Kokkos::Rank<2>>;
+    if (mpi_active_requests > 0) {
+      MPI_Waitall(mpi_active_requests, mpi_requests_send, MPI_STATUSES_IGNORE);
+      MPI_Waitall(mpi_active_requests, mpi_requests_recv, MPI_STATUSES_IGNORE);
+    }
 
-    Kokkos::parallel_for(
-      "unpack", policy_t({ 0, 0 }, { sx_, sy_ }), KOKKOS_LAMBDA(int i, int j) {
-        if (i == 0)
-          Ti_(i, j) = T_left_(j);
-        if (j == 0)
-          Ti_(i, j) = T_down_(i);
-        if (i == sx_ - 1)
-          Ti_(i, j) = T_right_(j);
-        if (j == sy_ - 1)
-          Ti_(i, j) = T_up_(i);
-      });
+    Kokkos::deep_copy(Kokkos::subview(T_, 0, Kokkos::ALL), T_left_);
+    Kokkos::deep_copy(Kokkos::subview(T_, Kokkos::ALL, 0), T_down_);
+    Kokkos::deep_copy(Kokkos::subview(T_, lx_ + 1, Kokkos::ALL), T_right_);
+    Kokkos::deep_copy(Kokkos::subview(T_, Kokkos::ALL, ly_ + 1), T_up_);
+
   }
 
   void initialize() {
@@ -447,9 +410,9 @@ struct System {
     // adios2::ADIOS      adios;
     adios2::IO         io = adios.DeclareIO("fieldIO");
     const adios2::Dims shape { static_cast<std::size_t>(ny), static_cast<std::size_t>(nx) };
-    const adios2::Dims start { static_cast<std::size_t>(xdown),
-                               static_cast<std::size_t>(ydown) };
-    const adios2::Dims count { static_cast<std::size_t>(lx), static_cast<std::size_t>(ly) };
+    const adios2::Dims start { static_cast<std::size_t>(ydown),
+                               static_cast<std::size_t>(xdown) };
+    const adios2::Dims count { static_cast<std::size_t>(ly), static_cast<std::size_t>(lx) };
     auto               io_variable = io.DefineVariable<double>("data", shape, start, count);
     io.SetEngine("HDF5");
 
@@ -470,60 +433,56 @@ struct System {
       time_push -= timer.seconds();
       time_tot -= timer.seconds();
 
-      // //  Do a Crank-Nicolson stage
-      // Kokkos::parallel_for(
-      //   "CN1", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
-      //     dT_(i, j) = 0.5 * vx_ * (T_(i + 1, j) - T_(i - 1, j));
-      //     dT_(i, j) += 0.5 * vy_ * (T_(i, j + 1) - T_(i, j - 1));
-      //   });
+      //  Do a Crank-Nicolson stage
+      Kokkos::parallel_for(
+        "CN1", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
+          dT_(i, j) = 0.5 * vx_ * (T_(i + 1, j) - T_(i - 1, j));
+          dT_(i, j) += 0.5 * vy_ * (T_(i, j + 1) - T_(i, j - 1));
+        });
 
-      // Kokkos::parallel_for(
-      //   "Euler1", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
-      //     Ti_(i, j) = T_(i, j) + 0.5 * dt_ * dT_(i, j);
-      //   });
+      Kokkos::parallel_for(
+        "Euler1", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
+          Ti_(i, j) = T_(i, j) + 0.5 * dt_ * dT_(i, j);
+        });
 
       time_push += timer.seconds();
 
       time_bnd -= timer.seconds();
 
-      pack_Ti_halo();
-      exchange_T_halo();
-      unpack_Ti_halo();
+      exchange_Ti_halo();
 
       time_bnd += timer.seconds();
 
       time_push -= timer.seconds();
 
-      // //  Do final Crank-Nicolson stage
-      // Kokkos::parallel_for(
-      //   "CN2", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
-      //     dT_(i, j) = 0.5 * vx_ * (Ti_(i + 1, j) - Ti_(i - 1, j));
-      //     dT_(i, j) += 0.5 * vy_ * (Ti_(i, j + 1) - Ti_(i, j - 1));
-      //   });
+      //  Do final Crank-Nicolson stage
+      Kokkos::parallel_for(
+        "CN2", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
+          dT_(i, j) = 0.5 * vx_ * (Ti_(i + 1, j) - Ti_(i - 1, j));
+          dT_(i, j) += 0.5 * vy_ * (Ti_(i, j + 1) - Ti_(i, j - 1));
+        });
 
-      // Kokkos::parallel_for(
-      //   "Euler2", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
-      //     T_(i, j) += dt_ * dT_(i, j);
-      //   });
+      Kokkos::parallel_for(
+        "Euler2", policy_t({ imin_, jmin_ }, { imax_, jmax_ }), KOKKOS_LAMBDA(int i, int j) {
+          T_(i, j) += dt_ * dT_(i, j);
+        });
 
       time_push += timer.seconds();
 
       time_bnd -= timer.seconds();
 
-      pack_T_halo();
       exchange_T_halo();
-      unpack_T_halo();
 
       time_bnd += timer.seconds();
 
       time_dump -= timer.seconds();
 
-      // Kokkos::parallel_reduce(
-      //   policy_t({ imin_, jmin_ }, { imax_, jmax_ }),
-      //   KOKKOS_LAMBDA(int i, int j, double& lval) { lval += 0.5 * T_(i, j) * T_(i, j); },
-      //   eloc_);
+      Kokkos::parallel_reduce(
+        policy_t({ imin_, jmin_ }, { imax_, jmax_ }),
+        KOKKOS_LAMBDA(int i, int j, double& lval) { lval += 0.5 * T_(i, j) * T_(i, j); },
+        eloc_);
 
-      // MPI_Reduce(&eloc_, &etot_, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+      MPI_Reduce(&eloc_, &etot_, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
       time_dump += timer.seconds();
 
