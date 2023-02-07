@@ -13,40 +13,6 @@
 
 namespace math = Kokkos;
 
-template <class ExecSpace>
-struct SpaceInstance {
-  static ExecSpace create() {
-    return ExecSpace();
-  }
-  static void destroy(ExecSpace&) {}
-  static bool overlap() {
-    return false;
-  }
-};
-
-#ifdef Kokkos_ENABLE_CUDA
-template <>
-struct SpaceInstance<Kokkos::Cuda> {
-  static Kokkos::Cuda create() {
-    cudaStream_t stream;
-    cudaStreamCreate(&stream);
-    return Kokkos::Cuda(stream);
-  }
-  static void destroy(Kokkos::Cuda& space) {
-    cudaStream_t stream = space.cuda_stream();
-    cudaStreamDestroy(stream);
-  }
-  static bool overlap() {
-    bool value          = true;
-    auto local_rank_str = std::getenv("CUDA_LAUNCH_BLOCKING");
-    if (local_rank_str) {
-      value = (std::stoi(local_rank_str) == 0);
-    }
-    return value;
-  }
-};
-#endif
-
 // Initialize physical system
 
 struct Init_kernel {
@@ -154,14 +120,6 @@ struct System {
   int                           mpi_active_requests = 0;
   MPI_Request                   mpi_requests_recv[4];
   MPI_Request                   mpi_requests_send[4];
-
-  Kokkos::DefaultExecutionSpace E_left
-    = SpaceInstance<Kokkos::DefaultExecutionSpace>::create();
-  Kokkos::DefaultExecutionSpace E_right
-    = SpaceInstance<Kokkos::DefaultExecutionSpace>::create();
-  Kokkos::DefaultExecutionSpace E_down
-    = SpaceInstance<Kokkos::DefaultExecutionSpace>::create();
-  Kokkos::DefaultExecutionSpace E_up = SpaceInstance<Kokkos::DefaultExecutionSpace>::create();
 
   // Specify mesh and physical constants
   System(MPI_Comm comm_) : comm(comm_) {
