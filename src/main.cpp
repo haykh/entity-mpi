@@ -454,6 +454,7 @@ struct System {
         Kokkos::deep_copy(io_recast_, Kokkos::subview(T_ , Kokkos::make_pair(1, lx_+1), Kokkos::make_pair(1, ly_+1)));
         auto outvec = Kokkos::create_mirror_view(io_recast_);
         Kokkos::deep_copy(outvec, io_recast_);
+        
         adios_engine.Put<double>(io_variable, outvec);
 
         adios_engine.EndStep();

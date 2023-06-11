@@ -56,13 +56,11 @@ struct CommHelper {
     if (rank == 1) np = 4;
     if (rank == 2) np = 3;
     
-    // printf("#Ranks: %i This rank: %i nx/ny: %i %i This nx/ny: %i %i \n",
-    //        nranks,
-    //        rank,
-    //        mx,
-    //        my,
-    //        xint,
-    //        yint);
+    printf("#Ranks: %i This rank: %i nx/ny: %i %i \n",
+           np,
+           rank,
+           mx,
+           my);
     // printf("This rank: %i Neighbors (left,right,down,up): %i %i %i %i\n",
     //        rank,
     //        left,
@@ -180,6 +178,23 @@ struct System {
       meshdomain(JMIN, i) = nghost;
       meshdomain(JMAX, i) = meshdomain(LY, i) + nghost;
     } 
+
+    T           = Kokkos::View<double***>("System::T", comm.np, meshdomain(SX, 0), meshdomain(SY, 0));
+    Ti          = Kokkos::View<double***>("System::Ti", comm.np, meshdomain(SX, 0), meshdomain(SY, 0));
+    dT          = Kokkos::View<double***>("System::dT", comm.np, meshdomain(SX, 0), meshdomain(SY, 0));
+    io_recast   = Kokkos::View<double**>("System::io_recast", meshdomain(LX, 0), meshdomain(LY, 0));
+
+    // incoming halos
+    T_left      = buffer_t("System::T_left", meshdomain(SY, 0));
+    T_right     = buffer_t("System::T_right", meshdomain(SY, 0));
+    T_down      = buffer_t("System::T_down", meshdomain(SX, 0));
+    T_up        = buffer_t("System::T_up", meshdomain(SX, 0));
+
+    // outgoing halo
+    T_left_out  = buffer_t("System::T_left_out", meshdomain(SY, 0));
+    T_right_out = buffer_t("System::T_right_out", meshdomain(SY, 0));
+    T_down_out  = buffer_t("System::T_down_out", meshdomain(SX, 0));
+    T_up_out    = buffer_t("System::T_up_out", meshdomain(SX, 0));
 
     std::ostringstream msg;
     msg << "MPI rank(" << comm.rank << ") ";
@@ -406,23 +421,6 @@ struct System {
     auto nx_    = this->nx;
     auto ny_    = this->ny;
     auto T_         = this->T;
-
-    T           = Kokkos::View<double***>("System::T", comm.np, meshdomain(SX, 0), meshdomain(SY, 0));
-    Ti          = Kokkos::View<double***>("System::Ti", comm.np, meshdomain(SX, 0), meshdomain(SY, 0));
-    dT          = Kokkos::View<double***>("System::dT", comm.np, meshdomain(SX, 0), meshdomain(SY, 0));
-    io_recast   = Kokkos::View<double**>("System::io_recast", meshdomain(LX, 0), meshdomain(LY, 0));
-
-    // incoming halos
-    T_left      = buffer_t("System::T_left", meshdomain(SY, 0));
-    T_right     = buffer_t("System::T_right", meshdomain(SY, 0));
-    T_down      = buffer_t("System::T_down", meshdomain(SX, 0));
-    T_up        = buffer_t("System::T_up", meshdomain(SX, 0));
-
-    // outgoing halo
-    T_left_out  = buffer_t("System::T_left_out", meshdomain(SY, 0));
-    T_right_out = buffer_t("System::T_right_out", meshdomain(SY, 0));
-    T_down_out  = buffer_t("System::T_down_out", meshdomain(SX, 0));
-    T_up_out    = buffer_t("System::T_up_out", meshdomain(SX, 0));
 
     Kokkos::parallel_for(
             "Init", policy_3t({0, meshdomain_(IMIN, 0), meshdomain_(JMIN, 0) }, {comm.np, meshdomain_(IMAX, 0), meshdomain_(JMAX, 0) }), KOKKOS_LAMBDA(int k, int i, int j){
