@@ -34,6 +34,41 @@
 
 namespace math = Kokkos;
 
+struct Init_kernel {
+  Init_kernel(const Kokkos::View<double***>& T,
+              const double&                 T1,
+              const double&                 T0,
+              const int&                    nx,
+              const int&                    ny,
+              const int&                    xdown,
+              const int&                    ydown,
+              const int&                    nghost,
+              const int&                    k)
+    : m_T(T),
+      m_T1(T1),
+      m_T0(T0),
+      m_nx(nx),
+      m_ny(ny),
+      m_xdown(xdown),
+      m_ydown(ydown),
+      m_nghost(nghost),
+      m_k(k) {}
+
+  KOKKOS_INLINE_FUNCTION void operator()(int i, int j) const {
+    m_T(m_k, i, j) += (m_T1 - m_T0)
+                 * math::exp(-((m_xdown + i - 0.5 * (m_nx + 2 * m_nghost))
+                                 * (m_xdown + i - 0.5 * (m_nx + 2 * m_nghost))
+                               + (m_ydown + j - 0.5 * (m_ny + 2 * m_nghost))
+                                   * (m_ydown + j - 0.5 * (m_ny + 2 * m_nghost)))
+                             / (0.2 * m_nx) / (0.2 * m_nx));
+  }
+
+private:
+  Kokkos::View<double***> m_T;
+  double                 m_T1, m_T0;
+  int                    m_nx, m_ny, m_xdown, m_ydown, m_nghost, m_k;
+};
+
 struct CommHelper {
   MPI_Comm comm;
 
@@ -107,12 +142,12 @@ struct System {
   const int              nx = 600, ny = 600, nghost = 1;    // System size in grid points
   int                    sx, sy, imin, imax, jmin, jmax, lx, ly;
   int                    tmax, iout;    // Number of timesteps, output interval
-  Kokkos::View<double***> T, Ti, dT;     // Fields of physical variables
+  Kokkos::View<double***, Kokkos::CudaSpace> T, Ti, dT;     // Fields of physical variables
   int                    xdown = 0, ydown = 0;
   int                    xup = 0, yup = 0;
   Kokkos::View<double**> io_recast;
-  Kokkos::View<int**> meshdomain;
-  Kokkos::View<int*> wholeworld;
+  Kokkos::View<int**, Kokkos::HostSpace> meshdomain;
+  Kokkos::View<int*, Kokkos::HostSpace> wholeworld;
   double                 T0, T1, vx, vy;       // Physical constants
   double                 dt;                   // Integration time-step
   double                 eloc, etot, etot0;    // Total energy
@@ -134,8 +169,8 @@ struct System {
 
   void setup_subdomain() {
 
-    meshdomain = Kokkos::View<int**>("System::Mesh", 20, comm.np);
-    wholeworld = Kokkos::View<int*>("System::World", 9); 
+    meshdomain = Kokkos::View<int**, Kokkos::HostSpace>("System::Mesh", 20, comm.np);
+    wholeworld = Kokkos::View<int*, Kokkos::HostSpace>("System::World", 9); 
 
     wholeworld(0) = 0;
     wholeworld(1) = 0;
@@ -179,9 +214,9 @@ struct System {
       meshdomain(JMAX, i) = meshdomain(LY, i) + nghost;
     } 
 
-    T           = Kokkos::View<double***>("System::T", comm.np, meshdomain(SX, 0), meshdomain(SY, 0));
-    Ti          = Kokkos::View<double***>("System::Ti", comm.np, meshdomain(SX, 0), meshdomain(SY, 0));
-    dT          = Kokkos::View<double***>("System::dT", comm.np, meshdomain(SX, 0), meshdomain(SY, 0));
+    T           = Kokkos::View<double***, Kokkos::CudaSpace>("System::T", comm.np, meshdomain(SX, 0), meshdomain(SY, 0));
+    Ti          = Kokkos::View<double***, Kokkos::CudaSpace>("System::Ti", comm.np, meshdomain(SX, 0), meshdomain(SY, 0));
+    dT          = Kokkos::View<double***, Kokkos::CudaSpace>("System::dT", comm.np, meshdomain(SX, 0), meshdomain(SY, 0));
     io_recast   = Kokkos::View<double**>("System::io_recast", meshdomain(LX, 0), meshdomain(LY, 0));
 
     // incoming halos
@@ -420,18 +455,15 @@ struct System {
     auto nghost_    = this->nghost;
     auto nx_    = this->nx;
     auto ny_    = this->ny;
-    auto T_         = this->T;
+    auto T1_         = this->T1;
+    auto T0_        = this->T0;
+    auto T_        = this->T;
 
-    Kokkos::parallel_for(
-            "Init", policy_3t({0, meshdomain_(IMIN, 0), meshdomain_(JMIN, 0) }, {comm.np, meshdomain_(IMAX, 0), meshdomain_(JMAX, 0) }), KOKKOS_LAMBDA(int k, int i, int j){
-
-        T_(k, i, j) = (T1 - T0) * math::exp(-((meshdomain_(XDOWN, k) + i - 0.5 * (nx_ + 2 * nghost_))
-                                    * (meshdomain_(XDOWN, k) + i - 0.5 * (nx_ + 2 * nghost_))
-                                  + (meshdomain_(YDOWN, k) + j - 0.5 * (ny_ + 2 * nghost_))
-                                      * (meshdomain_(YDOWN, k) + j - 0.5 * (ny_ + 2 * nghost_)))
-                                / (0.2 * nx_) / (0.2 * nx_));
-    });
-
+    for (int k = 0; k < comm.np; k++) {
+      Kokkos::parallel_for("initial",
+                          policy_t({meshdomain_(IMIN, k), meshdomain_(JMIN, k) }, {meshdomain_(IMAX, k), meshdomain_(JMAX, k) }),
+                          Init_kernel(T_, T1_, T0_, nx_, ny_, meshdomain_(XDOWN, k),  meshdomain_(YDOWN, k), nghost_, k));
+    }
   
   }
 
@@ -450,6 +482,8 @@ struct System {
     auto dt_        = this->dt;
     auto nx_        = this->nx;
     auto ny_        = this->ny;
+    auto lx_        = this->lx;
+    auto ly_        = this->ly;
     auto nghost_    = this->nghost;
     auto meshdomain_       = this->meshdomain;
     auto eloc_      = this->eloc;
@@ -478,7 +512,7 @@ struct System {
     adios2::Engine adios_engine = io.Open("../Temp.h5", adios2::Mode::Write);
 #endif
 
-    printf("My Domain: %i (%i %i) (%i %i) (%i %i) (%i %i)\n", comm.rank, xdown, xup, ydown, yup, nx, ny, lx, ly);
+    printf("My Domain: %i (%i %i) (%i %i) (%i %i) (%i %i)\n", comm.rank, meshdomain(XDOWN, 0), meshdomain(XUP, 0), meshdomain(YDOWN, 0), meshdomain(YUP, 0), nx, ny, meshdomain(LX, 0), meshdomain(LY, 0));
     double time_push = 0.0, time_dump = 0.0, time_bnd = 0.0, time_tot = 0.0;
 
     Kokkos::parallel_reduce(
